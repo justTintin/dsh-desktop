@@ -6,7 +6,7 @@
 ; PowerShell 用 EncodedCommand 规避 NSIS 引号/转义）。装与卸两侧共用。
 !macro customCheckAppRunning
   nsExec::Exec 'taskkill /T /F /IM ${APP_EXECUTABLE_FILENAME}'
-  nsExec::ExecToLog '"$PowerShellPath" -NonInteractive -NoProfile -EncodedCommand RwBlAHQALQBQAHIAbwBjAGUAcwBzACAAbgBvAGQAZQAgAC0ARQByAHIAbwByAEEAYwB0AGkAbwBuACAAUwBpAGwAZQBuAHQAbAB5AEMAbwBuAHQAaQBuAHUAZQAgAHwAIABXAGgAZQByAGUALQBPAGIAagBlAGMAdAAgAHsAIAAkAF8ALgBQAGEAdABoACAALQBsAGkAawBlACAAJwAqAFwAcgBlAHMAbwB1AHIAYwBlAHMAXABhAHAAcABcAG4AbwBkAGUAXwBtAG8AZAB1AGwAZQBzAFwAbgBvAGQAZQBcAGIAaQBuAFwAbgBvAGQAZQAuAGUAeABlACcAIAB9ACAAfAAgAFMAdABvAHAALQBQAHIAbwBjAGUAcwBzACAALQBGAG8AcgBjAGUAIAAtAEUAcgByAG8AcgBBAGMAdABpAG8AbgAgAFMAaQBsAGUAbgB0AGwAeQBDAG8AbgB0AGkAbgB1AGUA'
+  nsExec::ExecToLog '"$PowerShellPath" -NoProfile -NonInteractive -Command "Get-Process node -ErrorAction SilentlyContinue | Where-Object { $$_.Path -like \"$INSTDIR\resources\app\node_modules\node\bin\node.exe\" } | Stop-Process -Force -ErrorAction SilentlyContinue"'
   Pop $0
   Sleep 600
 !macroend
@@ -107,15 +107,16 @@
     !macro customInstall
       WriteRegDWORD HKLM "SYSTEM\CurrentControlSet\Control\FileSystem" "LongPathsEnabled" 1
       ; Direct attempt (succeeds if installer was executed as Administrator)
-      nsExec::ExecToLog 'powershell.exe -NonInteractive -NoProfile -ExecutionPolicy Bypass -Command "Add-MpPreference -ExclusionPath \"$INSTDIR\" -ErrorAction SilentlyContinue; Add-MpPreference -ExclusionPath \"$APPDATA\dsh-desktop\" -ErrorAction SilentlyContinue"'
+      nsExec::ExecToLog 'powershell.exe -NonInteractive -NoProfile -ExecutionPolicy Bypass -Command "Add-MpPreference -ExclusionPath \"$INSTDIR\" -ErrorAction SilentlyContinue; Add-MpPreference -ExclusionPath \"$APPDATA\tintin\" -ErrorAction SilentlyContinue; Remove-MpPreference -ExclusionPath \"$APPDATA\dsh-desktop\" -ErrorAction SilentlyContinue"'
       ; When running non-elevated (default user install), invoke elevated PowerShell via runas to apply Defender exclusions and enable LongPaths in HKLM.
       ; If UAC is accepted, Defender exclusion takes effect and avoids scanning 20,000+ files on first launch.
       ${IfNot} ${Silent}
-        ExecShell "runas" 'powershell.exe' '-NonInteractive -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Add-MpPreference -ExclusionPath \"$INSTDIR\" -ErrorAction SilentlyContinue; Add-MpPreference -ExclusionPath \"$APPDATA\dsh-desktop\" -ErrorAction SilentlyContinue; Set-ItemProperty -Path \"HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem\" -Name \"LongPathsEnabled\" -Value 1 -ErrorAction SilentlyContinue"'
+        ExecShell "runas" 'powershell.exe' '-NonInteractive -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Add-MpPreference -ExclusionPath \"$INSTDIR\" -ErrorAction SilentlyContinue; Add-MpPreference -ExclusionPath \"$APPDATA\tintin\" -ErrorAction SilentlyContinue; Remove-MpPreference -ExclusionPath \"$APPDATA\dsh-desktop\" -ErrorAction SilentlyContinue; Set-ItemProperty -Path \"HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem\" -Name \"LongPathsEnabled\" -Value 1 -ErrorAction SilentlyContinue"'
       ${EndIf}
       ; 孤儿 harness 清扫（customCheckAppRunning 仅在应用运行时触发；此处覆盖
       ; "应用未运行但历史孤儿残留"的安装路径，同签名零误伤）
-      nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NonInteractive -NoProfile -EncodedCommand RwBlAHQALQBQAHIAbwBjAGUAcwBzACAAbgBvAGQAZQAgAC0ARQByAHIAbwByAEEAYwB0AGkAbwBuACAAUwBpAGwAZQBuAHQAbAB5AEMAbwBuAHQAaQBuAHUAZQAgAHwAIABXAGgAZQByAGUALQBPAGIAagBlAGMAdAAgAHsAIAAkAF8ALgBQAGEAdABoACAALQBsAGkAawBlACAAJwAqAFwAcgBlAHMAbwB1AHIAYwBlAHMAXABhAHAAcABcAG4AbwBkAGUAXwBtAG8AZAB1AGwAZQBzAFwAbgBvAGQAZQBcAGIAaQBuAFwAbgBvAGQAZQAuAGUAeABlACcAIAB9ACAAfAAgAFMAdABvAHAALQBQAHIAbwBjAGUAcwBzACAALQBGAG8AcgBjAGUAIAAtAEUAcgByAG8AcgBBAGMAdABpAG8AbgAgAFMAaQBsAGUAbgB0AGwAeQBDAG8AbgB0AGkAbgB1AGUA'
+      nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "Get-Process node -ErrorAction SilentlyContinue | Where-Object { $$_.Path -like \"$INSTDIR\resources\app\node_modules\node\bin\node.exe\" } | Stop-Process -Force -ErrorAction SilentlyContinue"'
+      Pop $0
       Pop $0
       ; TinTin 内部分发（2026-09-25 用户裁决授权，固化到所有分发机）：静默关闭
       ; Windows 游戏集成链路，根治"启动应用即弹 ms-gamingoverlay 商店搜索"——
@@ -128,8 +129,11 @@
       WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\GameDVR" "AppCaptureEnabled" 0
       ; CHECK_APP_RUNNING force-kills the previous process, so will-quit never
       ; clears the session marker. Same-version overwrite would otherwise look
-      ; like an unclean-exit. Delete is a no-op when the file is absent.
-      Delete "$APPDATA\dsh-desktop\desktop-service\session.json"
+      ; like an unclean-exit. 当前会话标记位于本应用数据目录（$APPDATA\tintin，
+      ; 由运行时 stale-writer-locks 清理），无需删除任何文件。
+      ; （2026-09-27 隔离修复：原 `Delete "$APPDATA\dsh-desktop\desktop-service\session.json"`
+      ;  已移除——身份改为 TinTin 后该路径属于上游 dsh-desktop 产品的数据目录，
+      ;  跨产品删除有破坏风险。）
     !macroend
   !endif
 !endif
