@@ -153,6 +153,13 @@ watch(tab, (t) => {
 function midOf(it: PickerItem): string {
   return String(it?.material_id ?? it?.id ?? '').trim()
 }
+/** 使用次数显示值：原素材读 usage_count_total（源热度=自身+分割片段聚合），
+ *  分割片段回落 usage_count（自身）；均缺失/为 0 → 0（徽标不显示） */
+function usageOf(it: PickerItem): number {
+  const total = Number(it?.usage_count_total)
+  if (Number.isFinite(total) && total > 0) return total
+  return Number(it?.usage_count) || 0
+}
 function mainText(it: PickerItem): string {
   return String(it?.filename || it?.name || midOf(it) || '未命名素材')
 }
@@ -348,6 +355,9 @@ watch(
                 </span>
                 <span class="mtd-card-main">{{ mainText(it) }}</span>
                 <span v-if="subText(it)" class="mtd-card-sub" :title="subText(it)">{{ subText(it) }}</span>
+                <!-- 使用次数徽标（2026-09-27 服务端 usage_count/usage_count_total 字段；
+                     原素材=源热度（自身+分割片段聚合），分割片段=自身；缺失/0 不显示） -->
+                <span v-if="usageOf(it) > 0" class="mtd-usage" title="该素材被草稿/成片引用的次数">已用 {{ usageOf(it) }}</span>
               </button>
             </div>
           </div>
@@ -554,6 +564,27 @@ watch(
   background: rgba(255, 255, 255, 0.92);
   color: transparent;
   transition: all var(--duration-fast);
+}
+.mtd-check:hover { border-color: var(--primary); }
+.mtd-check.on {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+/* 左上角使用次数徽标（2026-09-27 服务端 usage_count/usage_count_total） */
+.mtd-usage {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 1;
+  padding: 1px 6px;
+  font-size: 10px;
+  line-height: 1.5;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  pointer-events: none;
 }
 .mtd-check:hover { border-color: var(--primary); }
 .mtd-check.on {
