@@ -162,6 +162,10 @@ onMounted(() => {
       <JianYingTemplates v-else-if="active === 'jianying-templates'" />
       <VoiceClone v-else-if="active === 'voice-clone'" />
       <OtStoryboard v-else-if="active === 'storyboard'" />
+      <VideoTranscribe v-else-if="active === 'video-transcribe'" />
+      <SubtitleRemoval v-else-if="active === 'subtitle-removal'" />
+      <ViralClone v-else-if="active === 'viral-clone'" />
+      <LiveClip v-else-if="active === 'live-slice'" />
       <CoverMaker v-else-if="active === 'cover-design'" />
       <ImageMatting v-else-if="active === 'image-matting'" />
       <AudioGen v-else-if="active === 'audio-gen'" />
