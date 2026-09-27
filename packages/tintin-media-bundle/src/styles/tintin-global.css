@@ -15,6 +15,11 @@
 .tintin-media-scope *, .tintin-media-scope *::before, .tintin-media-scope *::after {
   box-sizing: border-box;
 }
+/* 作用域根自身也要 border-box：根节点是 width:100% + padding，缺这条会让
+   内容盒比可视区宽出一个内边距，整页出现横向滚动（2026-09-27 用户报障） */
+.tintin-media-scope {
+  box-sizing: border-box;
+}
 .tintin-media-scope * {
   margin: 0;
   padding: 0;
