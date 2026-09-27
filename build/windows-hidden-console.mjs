@@ -27,8 +27,11 @@ const SW_HIDE = 0
 export function createHiddenConsole({ load } = {}) {
   try {
     // This helper lives in resources/, while packaged dependencies live in
-    // resources/app/node_modules. In development the same resolver walks up
-    // from build/app/ to the repository's node_modules.
+    // resources/app.asar.unpacked/node_modules (0.1.7: asar=true with the
+    // node_modules tree unpacked for the external Harness Node process; the
+    // resolver below maps there through ./app/package.json). In development
+    // the same resolver walks up from build/app/ to the repository's
+    // node_modules.
     // Load inside the guard: missing packages/native bindings must not prevent
     // either normal startup or Safe Mode from reaching the Harness entry.
     const loadLibrary = load ?? createRequire(new URL('./app/package.json', import.meta.url))('koffi').load

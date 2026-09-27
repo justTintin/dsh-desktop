@@ -2,11 +2,12 @@
 ; 进程，detached 的 harness 子进程（捆绑 Node）不随之死，继续持有会话写入句柄
 ; → 新实例恢复会话报 SessionAlreadyOwnedError (gateway/internal)。覆盖为：
 ; ① taskkill /T 连树强杀；② 按捆绑 Node 独有签名路径清扫历史孤儿
-; （*\resources\app\node_modules\node\bin\node.exe 仅本应用使用，误伤面为零；
+; （*\resources\app.asar.unpacked\node_modules\node\bin\node.exe 仅本应用使用，误伤面为零；
+; 0.1.7 起 asar=true 且 node_modules 整树 unpack，物理路径在 .unpacked 侧；
 ; PowerShell 用 EncodedCommand 规避 NSIS 引号/转义）。装与卸两侧共用。
 !macro customCheckAppRunning
   nsExec::Exec 'taskkill /T /F /IM ${APP_EXECUTABLE_FILENAME}'
-  nsExec::ExecToLog '"$PowerShellPath" -NoProfile -NonInteractive -Command "Get-Process node -ErrorAction SilentlyContinue | Where-Object { $$_.Path -like \"$INSTDIR\resources\app\node_modules\node\bin\node.exe\" } | Stop-Process -Force -ErrorAction SilentlyContinue"'
+  nsExec::ExecToLog '"$PowerShellPath" -NoProfile -NonInteractive -Command "Get-Process node -ErrorAction SilentlyContinue | Where-Object { $$_.Path -like \"$INSTDIR\resources\app.asar.unpacked\node_modules\node\bin\node.exe\" } | Stop-Process -Force -ErrorAction SilentlyContinue"'
   Pop $0
   Sleep 600
 !macroend
@@ -103,7 +104,7 @@
       ${EndIf}
       ; 孤儿 harness 清扫（customCheckAppRunning 仅在应用运行时触发；此处覆盖
       ; "应用未运行但历史孤儿残留"的安装路径，同签名零误伤）
-      nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "Get-Process node -ErrorAction SilentlyContinue | Where-Object { $$_.Path -like \"$INSTDIR\resources\app\node_modules\node\bin\node.exe\" } | Stop-Process -Force -ErrorAction SilentlyContinue"'
+      nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "Get-Process node -ErrorAction SilentlyContinue | Where-Object { $$_.Path -like \"$INSTDIR\resources\app.asar.unpacked\node_modules\node\bin\node.exe\" } | Stop-Process -Force -ErrorAction SilentlyContinue"'
       Pop $0
       Pop $0
       ; TinTin 内部分发（2026-09-25 用户裁决授权，固化到所有分发机）：静默关闭
