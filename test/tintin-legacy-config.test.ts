@@ -2,7 +2,13 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { findLegacyConfigDir, planLegacyMigration, readLegacyConfig } from '../packages/tintin-bundle/lib/legacy-config.js'
+import {
+  findLegacyConfigDir,
+  planImportedSettingsRecovery,
+  planLegacyMigration,
+  readImportedTintinSection,
+  readLegacyConfig,
+} from '../packages/tintin-bundle/lib/legacy-config.js'
 
 describe('tintin legacy-config migration', () => {
   let dir: string
@@ -52,5 +58,72 @@ describe('tintin legacy-config migration', () => {
     mkdirSync(configDir, { recursive: true })
     writeFileSync(join(configDir, 'server.json'), '{not json', 'utf8')
     expect(readLegacyConfig(configDir)).toEqual([])
+  })
+})
+
+describe('tintin settings.yaml.imported recovery (0.1.7 migration gap)', () => {
+  let dir: string
+  afterEach(() => { if (dir) rmSync(dir, { recursive: true, force: true }) })
+
+  // Shape captured on the real fleet machine after the 0.1.7 upgrader renamed
+  // the store: upstream sections alongside our stranded tintin-bundle one.
+  const IMPORTED_YAML = `ui-onboarding:
+  welcomeNoticeVersion: 2026-08-13.1
+tintin-bundle:
+  server:
+    url: http://192.168.111.31:8000
+    provisioned: true
+  local:
+    cacheDir: D:\\Media\\cache
+llm-pi-ai:
+  providers:
+    tintin-server:
+      baseURL: http://192.168.111.31:8000/llm
+`
+
+  function seedImported(yaml = IMPORTED_YAML): string {
+    dir = join(tmpdir(), `tintin-rec-${Date.now()}`)
+    mkdirSync(dir, { recursive: true })
+    const file = join(dir, 'settings.yaml.imported')
+    writeFileSync(file, yaml, 'utf8')
+    return file
+  }
+
+  it('reads only the tintin-bundle section from the renamed store', () => {
+    const section = readImportedTintinSection(seedImported())
+    expect(section).toEqual({
+      server: { url: 'http://192.168.111.31:8000', provisioned: true },
+      local: { cacheDir: 'D:\\Media\\cache' },
+    })
+  })
+
+  it('returns null when the file or section is absent or malformed', () => {
+    expect(readImportedTintinSection(join(tmpdir(), 'no-such-file.yml'))).toBeNull()
+    expect(readImportedTintinSection(seedImported('llm-pi-ai:\n  providers: {}\n'))).toBeNull()
+    expect(readImportedTintinSection(seedImported('{not: [yaml'))).toBeNull()
+  })
+
+  it('plans recovery only for leaves still empty in the new config', () => {
+    const section = readImportedTintinSection(seedImported())
+    // Nothing configured after the upgrade → recover every leaf.
+    expect(planImportedSettingsRecovery(section, {})).toEqual([
+      { path: ['server', 'url'], value: 'http://192.168.111.31:8000' },
+      { path: ['server', 'provisioned'], value: true },
+      { path: ['local', 'cacheDir'], value: 'D:\\Media\\cache' },
+    ])
+    // server.url re-set by the user post-upgrade → keep it, fill the rest.
+    expect(planImportedSettingsRecovery(section, { server: { url: 'http://10.0.0.2:1' } })).toEqual([
+      { path: ['server', 'provisioned'], value: true },
+      { path: ['local', 'cacheDir'], value: 'D:\\Media\\cache' },
+    ])
+    // Fully recovered → no-op on the next boot (idempotent).
+    expect(planImportedSettingsRecovery(section, {
+      server: { url: 'http://192.168.111.31:8000', provisioned: true },
+      local: { cacheDir: 'D:\\Media\\cache' },
+    })).toEqual([])
+  })
+
+  it('plans nothing for a null section', () => {
+    expect(planImportedSettingsRecovery(null, {})).toEqual([])
   })
 })

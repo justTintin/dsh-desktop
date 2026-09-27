@@ -20,7 +20,8 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@deepseek-ai/schemastery": "^3.18.2"
+    "@deepseek-ai/schemastery": "^3.18.2",
+    "js-yaml": "^4.1.0"
   },
   "dsh": {
     "bundle": {

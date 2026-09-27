@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import z from '@deepseek-ai/schemastery'
 import { resolveMachineIdSync } from './lib/machine-id.js'
-import { findLegacyConfigDir, planLegacyMigration } from './lib/legacy-config.js'
+import { findLegacyConfigDir, planImportedSettingsRecovery, planLegacyMigration, readImportedTintinSection } from './lib/legacy-config.js'
 import {
   createServerUrlResolver,
   createHttpRequest,
@@ -238,6 +238,33 @@ export async function apply(ctx, config) {
     }
     return undefined
   }, 'tintin-bundle: legacy config migration')
+
+  // 0.1.7 settings-yaml recovery: the upstream settings restructure renamed the
+  // old store to <DSH_HOME>/settings.yaml.imported and carried only upstream
+  // namespaces across — our section (server.url/provisioned, local.cacheDir)
+  // was stranded, dropping the bridge onto the built-in 127.0.0.1:8766 default.
+  // Fill still-empty leaves from the renamed store; idempotent, and it never
+  // overwrites anything the user re-set after the upgrade.
+  ctx.effect(() => {
+    const dshHome = process.env.DSH_HOME
+    if (!dshHome) return undefined
+    const section = readImportedTintinSection(join(dshHome, 'settings.yaml.imported'))
+    const ops = planImportedSettingsRecovery(section, config ?? {})
+    if (ops.length === 0) return undefined
+    const patch = {}
+    for (const { path, value } of ops) {
+      let node = patch
+      for (let i = 0; i < path.length - 1; i++) node = node[path[i]] ??= {}
+      node[path[path.length - 1]] = value
+    }
+    ctx.logger.info('tintin-bundle: recovering settings from settings.yaml.imported (%d keys)', ops.length)
+    if (typeof ctx.settings?.update === 'function') {
+      ctx.settings.update(name, patch).catch((e) => ctx.logger.warn('tintin-bundle: settings recovery failed: %s', e?.message ?? e))
+    } else {
+      ctx.logger.warn('tintin-bundle: settings service has no update(); settings recovery skipped this boot')
+    }
+    return undefined
+  }, 'tintin-bundle: settings.yaml.imported recovery')
 
   // WP-5c: sync the bundled role presets into $DSH_HOME/.agent-presets/ —
   // the preset roster's user root, auto-scanned by dsh-agent-presets. Our
