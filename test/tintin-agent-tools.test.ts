@@ -55,8 +55,8 @@ describe('createTintinAgentTools', () => {
       ...noopLog,
     })
     const plan = tools[0] as { execute: (a?: unknown) => Promise<unknown> }
-    expect(await plan.execute({})).toEqual({ error: 'type 必填：媒体工作流类型' })
-    const ok = await plan.execute({ type: '数字人口播', inputs: ['image'] }) as { ready: boolean; plan: { workflow_id: string } }
+    expect(await plan.execute({})).toEqual({ error: 'workflow_type 必填：媒体工作流类型' })
+    const ok = await plan.execute({ workflow_type: '数字人口播', inputs: ['image'] }) as { ready: boolean; plan: { workflow_id: string } }
     expect(ok.ready).toBe(true)
     expect(ok.plan.workflow_id).toBe('wf1')
     expect(calls[0]?.path).toBe('/workflow/plan')
@@ -130,6 +130,6 @@ describe('createTintinAgentTools', () => {
       ...noopLog,
     })
     const plan = tools[0] as { execute: (a?: unknown) => Promise<unknown> }
-    expect(await plan.execute({ type: 'x' })).toEqual({ error: 'TinTin 服务端离线' })
+    expect(await plan.execute({ workflow_type: 'x' })).toEqual({ error: 'TinTin 服务端离线' })
   })
 })

@@ -75,7 +75,9 @@ export function createTintinAgentTools({ httpRequest, callNative, readFile, log 
       'When ready=true the plan carries workflow_id/backend/selection. ' +
       'Use before heavy media work to pick the right backend.',
     parameters: {
-      type: { type: 'string', required: true, description: '工作流类型（服务端节点工作流引擎域，如 数字人口播）' },
+      // 参数名不可用 `type`——defineTool 的 schema 编译器把 parameters.type
+      // 当作类型槽（保留键），同名参数会让整个插件注册段崩溃（2026-09-27 实测）。
+      workflow_type: { type: 'string', required: true, description: '工作流类型（服务端节点工作流引擎域，如 数字人口播）' },
       inputs: { type: 'array', items: { type: 'string' }, description: '可用输入清单（image/audio/video/prompt 等）' },
       prefer: { type: 'string', description: '执行端偏好：auto/local/runninghub' },
     },
@@ -89,8 +91,8 @@ export function createTintinAgentTools({ httpRequest, callNative, readFile, log 
     isConcurrencySafe: () => true,
     presentCall: (args) => ({ card: 'generic', kind: 'execute', title: 'Plan media workflow (server)', rawInput: args }),
     async execute(args) {
-      const body = normalizePlanInputs(args)
-      if (!body.type) return { error: 'type 必填：媒体工作流类型' }
+      const body = normalizePlanInputs({ type: args?.workflow_type, inputs: args?.inputs, prefer: args?.prefer })
+      if (!body.type) return { error: 'workflow_type 必填：媒体工作流类型' }
       try {
         log('agent-tools', 'plan_media_workflow', body.type)
         const res = await httpRequest('POST', '/workflow/plan', { body, timeout: 55_000 })
