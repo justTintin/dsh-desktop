@@ -25,6 +25,7 @@ import { buildBoundaryTransitions } from '../copywritingMontageStep2ConcatLogic.
 import { useCopywritingMontageStep3Voice } from './useCopywritingMontageStep3Voice'
 import { useCopywritingMontageBgmGen } from './useCopywritingMontageBgmGen'
 import { useCopywritingMontageBgmPlayer } from './useCopywritingMontageBgmPlayer'
+import { createMaterialUsageReporter } from './usageReportLogic'
 
 type CopywritingStep3Api = ReturnType<typeof useCopywritingMontageStep3Voice>
 
@@ -90,6 +91,22 @@ export function useCopywritingMontageStep4Final(ctx: MontageStep4Context) {
     textKeywordDensity, subtitleFontSize, clearVoiceProgressListener,
     finalBusy, finalProgress, finalDone, finalVideoList, finalVideoPath, step4Candidates,
   } = ctx
+
+  // 素材使用量上报器（2026-09-27 服务端交付对接）：剪映草稿导出成功后
+  // fire-and-forget 上报本次使用的素材段（POST /material/usage/report）。
+  // 失败只记日志、最多补重 2 次后静默——绝不阻断导出主流程（服务端规格）。
+  const materialUsageReporter = createMaterialUsageReporter({
+    post: async (payload) => {
+      const post = window.tintin?.server?.post
+      if (typeof post !== 'function') throw new Error('主进程桥不可用')
+      const r = await post.call(window.tintin.server, '/material/usage/report', payload)
+      if (r === null || r === undefined) throw new Error('主进程不可达')
+      return r as { ok?: boolean; counted?: number; duplicate?: boolean; error?: string }
+    },
+    maxRetries: 2,
+    delayMs: 2000,
+    log: (...a: unknown[]) => clientError('material-usage', a.map(String).join(' ')),
+  })
 
   // ══ Step4 特效包装（对照 step4_final_view.py 逐控件 + _start_final_mix/FinalMixWorker 一比一）══
   // BGM 选择持久化（2026-09-15 用户报障：会话级 ref 重启清空 → 导出时间轴缺 BGM 轨。
@@ -545,6 +562,9 @@ async function exportAllToJianyingDraft(): Promise<void> {
     /** 2026-09-22 用户裁决「音效包装对齐导出」：镜级 AI 音效显式指派（逐视频、与
      *  videoPaths 平行；有显式指派的视频音效池事件轨让位——导出器口径） */
     sfxClips?: Array<Array<{ path: string; startUs: number; durUs: number }>>
+    /** 2026-09-27 素材使用上报标识（与 videoPaths 对齐）：优先 serverPath（含
+     *  material://<id> 形态），服务端按此归属素材；缺省回落 videoPaths */
+    usageClips?: string[]
     /** 2026-09-17 用户报障①：第四步选中的服务端字幕样式对象（/subtitle_styles 成员）
      *  + UI 背景不透明度百分比 → 主进程映射为草稿字幕轨文本样式 */
     subtitleStyle?: Record<string, unknown> | null
@@ -603,6 +623,19 @@ async function exportAllToJianyingDraft(): Promise<void> {
         }
       }
       notify('草稿导出成功', successBody(base.draftName) + tail)
+      // 素材使用量上报（2026-09-27 服务端交付对接）：导出成功后 fire-and-forget
+      // 一条 POST /material/usage/report（kind=jianying_draft；task_id 每次导出
+      // 唯一=幂等键；clips 优先 usageRef=serverPath/material://<id>，服务端解析
+      // 归属素材）。失败只记日志、最多补重 2 次后静默——服务端未重启（404）也
+      // 静默降级，绝不阻断导出主流程。
+      const usageClips = base.usageClips?.length
+        ? base.usageClips
+        : (base.videoPaths?.length ? base.videoPaths : (base.videoPath ? [base.videoPath] : []))
+      if (usageClips.length) {
+        void materialUsageReporter.reportUsage(usageClips).then((out) => {
+          if (!out.ok) clientError('material-usage', '使用量上报未落库', out.error ?? 'unknown')
+        })
+      }
       return true
     } else {
       clientError('video-montage', '导出剪映草稿失败', res ? res.message : '主进程不可达')
@@ -797,6 +830,9 @@ async function exportAllToJianyingDraft(): Promise<void> {
       planIdx: number; planFirst: boolean; shotFirst: boolean; planKey: string
       text: string; timingPath: string; voicePath: string; srtKey: string
       sfxWavLocal?: string; sfxDurSec?: number; shotLen: number
+      /** 素材使用上报标识（2026-09-27）：优先 serverPath（服务端可解析，含
+       *  material://<id> 形态），回落 clipUrl/clipLocalPath */
+      usageRef?: string
     }
     const segs: SegMeta[] = []
     const planHits: Array<Array<{ text: string; start: number; end: number; keywords: string[]; templateId?: string }>> = []
@@ -821,6 +857,7 @@ async function exportAllToJianyingDraft(): Promise<void> {
             sfxWavLocal: tab.shots[gi]?.sfxWavLocal,
             sfxDurSec: tab.shots[gi]?.sfxDurSec,
             shotLen,
+            usageRef: s.serverPath || s.clipUrl || s.clipLocalPath || '',
           })
           c0 += durSec
         })
@@ -1014,6 +1051,8 @@ async function exportAllToJianyingDraft(): Promise<void> {
         : joinPath(await readCacheDir(), 'montage_cache', 'sfx'),
       draftName: finalName,
       successBody: (name: string) => '已按原始轨道结构导出 ' + cands.length + ' 段候选视频（转场：' + transition + '，含口播/字幕/关键词/BGM 轨）！\n项目名称：' + name + (missingPlanNote ? '\n（注：' + missingPlanNote + '）' : ''),
+      // 素材使用上报标识（§usage：serverPath/material://<id>，服务端解析归属）
+      usageClips: segsReady.map((s) => s.usageRef).filter((x): x is string => !!x),
     })
     if (ok) {
       exportProgress.value = 100
