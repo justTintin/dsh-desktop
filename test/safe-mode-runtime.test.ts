@@ -37,7 +37,12 @@ registerHooks({ resolve(specifier, context, next) {
     dshHome: home,
     logPath: join(home, logName),
     startupTimeoutMs: 30_000,
-    launchProcess: (executable, args, options) => spawn(executable, ['--import', pathToFileURL(hook).href, ...args], options),
+    launchProcess: (executable, args, options) => {
+      const child = spawn(executable, ['--import', pathToFileURL(hook).href, ...args], options)
+      // HarnessChildProcess.pid 契约为 number | null（Windows 连树杀目标）；
+      // ChildProcess 的 pid 是 number | undefined，此处对齐。
+      return Object.assign(child, { pid: child.pid ?? null })
+    },
     onChanged() {}
   })
   // Positive control: the same safe Profile with a PPT-only overlay must fail.

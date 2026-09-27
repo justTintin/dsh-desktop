@@ -453,12 +453,6 @@ declare interface TintinBridgeServer {
   llmChat(
     payload: LLMAPI.ChatCompletionsRequest
   ): Promise<IpcError<LLMAPI.ChatCompletionsResponse>>
-  llmAdjustCopywriting(payload: {
-    script_id?: string
-    text?: string
-    instruction?: string
-    [k: string]: any
-  }): Promise<IpcError<any>>
   /** GET /llm/models → 设置页「默认模型」下拉数据源（离线返回 null 或 {error}） */
   llmModels(): Promise<IpcError<LLMAPI.LlmModelsResponse>>
 

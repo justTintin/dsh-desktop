@@ -204,7 +204,12 @@ describe('structured startup failures through the real bundled loader', () => {
       dshHome: home,
       logPath: join(home, 'runtime.log'),
       startupTimeoutMs: 5_000,
-      launchProcess: (executable, args, options) => spawn(executable, args, options),
+      launchProcess: (executable, args, options) => {
+      const child = spawn(executable, args, options)
+      // HarnessChildProcess.pid 契约 number | null（Windows 连树杀目标）；
+      // ChildProcess.pid 是 number | undefined，此处对齐。
+      return Object.assign(child, { pid: child.pid ?? null })
+    },
       onChanged() {}
     })
     try {

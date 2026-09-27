@@ -1,4 +1,4 @@
-import { execFile, execFileSync, type SpawnOptionsWithoutStdio } from 'node:child_process'
+import { execFile, execFileSync, spawn, type SpawnOptionsWithoutStdio } from 'node:child_process'
 import type { EventEmitter } from 'node:events'
 import { createWriteStream, existsSync, mkdirSync, type WriteStream } from 'node:fs'
 import { mkdir, readFile } from 'node:fs/promises'
@@ -33,6 +33,10 @@ export interface HarnessRuntimeOptions {
    *  child as TINTIN_BIN_DIR. Undefined leaves the host plugin to its own
    *  search (WP-1). */
   tintinBinDir?: string
+  /** Windows tree-kill seam (tests record the pid instead of spawning
+   *  taskkill). Default spawns `taskkill /pid <pid> /t /f` — see
+   *  killWindowsProcessTree for why the quit path must be a tree kill. */
+  killTree?: (pid: number) => void
   onChanged(snapshot: RuntimeSnapshot): void
 }
 
@@ -40,7 +44,29 @@ export interface HarnessChildProcess extends EventEmitter {
   readonly stdout: NodeJS.ReadableStream
   readonly stderr: NodeJS.ReadableStream
   readonly exitCode: number | null
+  /** OS pid; null until the OS assigns one (spawn failure). The tree kill
+   *  targets this pid. */
+  readonly pid: number | null
   kill(signal?: NodeJS.Signals): boolean
+}
+
+/**
+ * Force-kill the Harness child's whole process tree on Windows. The Harness
+ * is spawned `detached` (own process group) and raises a subtree of its own —
+ * bundled-Node workers, the session gateway, pnpm runs. Windows signals reach
+ * only the Harness pid itself, so a pid-only kill orphans that subtree: the
+ * survivors keep handles inside the profile's node_modules and the next
+ * market update fails on a locked rename (EPERM, seen 2026-09-25). taskkill
+ * /t is the only Windows kill with tree semantics; the same shape is used for
+ * pnpm children (pnpm-runner.mjs) and plugin commands
+ * (profile-plugin-command.ts). unref'd: a taskkill that cannot start must not
+ * keep the app alive — the pid-only SIGKILL fallback in stopChild remains.
+ */
+export function killWindowsProcessTree(spawnProcess: typeof spawn, pid: number): void {
+  spawnProcess('taskkill', ['/pid', String(pid), '/t', '/f'], {
+    windowsHide: true,
+    stdio: 'ignore'
+  }).unref()
 }
 
 export const DEFAULT_HARNESS_PORT = 43129
@@ -650,7 +676,12 @@ ${cause}`
     const exitPromise = new Promise<boolean>((resolve) =>
       child.once('exit', () => resolve(true))
     )
-    child.kill('SIGTERM')
+    const killTree = this.options.killTree ?? ((pid: number) => killWindowsProcessTree(spawn, pid))
+    if (process.platform === 'win32' && child.pid !== null) {
+      killTree(child.pid)
+    } else {
+      child.kill('SIGTERM')
+    }
     const exited = await Promise.race([
       exitPromise,
       new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 4_000))

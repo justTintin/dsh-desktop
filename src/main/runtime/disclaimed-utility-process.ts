@@ -94,6 +94,12 @@ class UtilityProcessAdapter extends EventEmitter implements HarnessChildProcess 
     })
   }
 
+  /** OS pid (null until spawn); the Windows quit path targets it with a tree
+   *  kill (killWindowsProcessTree). */
+  get pid(): number | null {
+    return this.child.pid ?? null
+  }
+
   kill(signal?: NodeJS.Signals): boolean {
     if (signal === 'SIGKILL' && this.child.pid !== undefined) {
       try {

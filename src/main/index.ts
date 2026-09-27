@@ -3381,12 +3381,17 @@ async function bootstrap(): Promise<void> {
     // Keep the Harness origin stable across launches. These ports are separate
     // from the production/development mobile bridge ports (43127/43128).
     preferredPort: DEFAULT_HARNESS_PORT + (developmentBuild ? 1 : 0),
-    launchProcess: (executablePath, args, options) =>
-      process.platform === 'darwin'
-        ? launchDisclaimedUtilityProcess(utilityProcess, args, options, {
+    launchProcess: (executablePath, args, options) => {
+      if (process.platform === 'darwin') {
+        return launchDisclaimedUtilityProcess(utilityProcess, args, options, {
           disclaim: !developmentBuild
         })
-        : spawn(executablePath, args, options),
+      }
+      const child = spawn(executablePath, args, options)
+      // HarnessChildProcess.pid 契约为 number | null（Windows 退出连树杀的
+      // 目标，killWindowsProcessTree）；ChildProcess.pid 是 number | undefined。
+      return Object.assign(child, { pid: child.pid ?? null })
+    },
     onChanged: (snapshot) => {
       desktopDiagnostics?.runtimeChanged(snapshot, () => runtime.flushLog(), runtime.launchAttemptId)
       if (!safeModeVisible && snapshot.phase === 'ready') {

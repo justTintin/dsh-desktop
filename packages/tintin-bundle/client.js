@@ -781,7 +781,6 @@ const tintinClient = (() => {
         // ── HTTP 封装 ──
         llmChat: (payload) => call('server:post', { path: '/llm/chat/completions', body: payload }),
         llmModels: () => call('server:get', { path: '/llm/models' }),
-        llmAdjustCopywriting: (payload) => call('server:post', { path: '/script/adjust-copywriting', body: payload }),
         copywritingVoiceover: (payload) => call('server:post', { path: '/copywriting/voiceover', body: payload }),
         // 声音样本域（2026-09-24 补链：此前 ttsVoicesSamples 未映射 → Step2
         // 永远「无样本可选」）。列表/音色是纯 GET 走通用通道；上传与转写的
