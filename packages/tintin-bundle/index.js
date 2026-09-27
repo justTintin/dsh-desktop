@@ -862,18 +862,31 @@ export async function apply(ctx) {
   }
   ctx.provide('tintinBridge', tintinBridge)
 
-  ctx.inject(['webServer', 'tools'], (webCtx) => webCtx.effect(() => {
-    webCtx.tools.register(pingServerTool)
-    webCtx.tools.register(ffmpegProbeTool)
+  // 工具注册独立段（铁律 7 不扩大，2026-09-27 事故修复）：单个工具 schema
+  // 编译失败只跳过自身并 error 打点，绝不拖垮 web 路由注册——曾因 browser_open
+  // 误用原生 JSON-schema 形态（parameters.type='object'）把整个插件 effect
+  // 炸断，/tintin/ipc 等全部路由未注册，渲染层桥请求全线 405/404。
+  ctx.inject(['tools'], (toolsCtx) => {
+    const registerTool = (def) => {
+      try {
+        toolsCtx.tools.register(defineTool(def))
+      } catch (error) {
+        ctx.logger.error('tintin-bundle: tool %s skipped: %s', def?.name, error?.message ?? error)
+      }
+    }
+    registerTool(pingServerTool)
+    registerTool(ffmpegProbeTool)
 
     // ── 浏览器域 agent 工具（架构文档 §浏览器域三层形态第2/3层）：
     // 经壳层回环服务（loopback.json 握手，token 鉴权）驱动独立浏览器引擎。
     // 输出摘要化（架构 §4.5 成本护栏）：只回 agent 决策所需字段。
-    webCtx.tools.register(defineTool({
+    // parameters 用 dsh-tools 平铺形态（每参数名 → schema），禁用原生
+    // JSON-schema 形态——parameters.type 是框架保留槽。
+    registerTool({
       name: 'browser_open',
       description: '打开 TinTin 内置浏览器独立窗口并导航到平台首页（douyin/bilibili/kuaishou/xiaohongshu/weixin/youtube/jimeng/fxg/web）。各平台登录态独立隔离。用例：需要用户登录平台或打开平台页面前置。',
       parameters: {
-        type: 'object', properties: { platform: { type: 'string', description: '平台 id：douyin/bilibili/kuaishou/xiaohongshu/weixin/youtube/jimeng/fxg/web' } }, required: ['platform'],
+        platform: { type: 'string', required: true, description: '平台 id：douyin/bilibili/kuaishou/xiaohongshu/weixin/youtube/jimeng/fxg/web' },
       },
       output: {
         schema: { type: 'object', additionalProperties: false, properties: {
@@ -886,13 +899,13 @@ export async function apply(ctx) {
       async execute(args) {
         return loopbackCall('/tintin-browser/open', { platform: args.platform })
       },
-    }))
+    })
 
-    webCtx.tools.register(defineTool({
+    registerTool({
       name: 'page_extract',
       description: '在 TinTin 内置浏览器中运行平台抽取脚本，抽取当前页面的结构化内容（标题/作者/正文/媒体链接等，视平台而定）。前置：先用 browser_open 打开对应平台。抽取失败会返回结构化原因（NEED_LOGIN=需先登录 / RISK_CAPTCHA=触发验证码 / DOM_MISMATCH=页面结构变化）。',
       parameters: {
-        type: 'object', properties: { platform: { type: 'string', description: '平台 id（douyin/bilibili/kuaishou/xiaohongshu/weixin）' } }, required: ['platform'],
+        platform: { type: 'string', required: true, description: '平台 id（douyin/bilibili/kuaishou/xiaohongshu/weixin）' },
       },
       output: {
         schema: { type: 'object', additionalProperties: false, properties: {
@@ -906,9 +919,9 @@ export async function apply(ctx) {
         const res = await loopbackCall('/tintin-browser/extract', { platform: args.platform })
         return summarizeExtract(res)
       },
-    }))
+    })
 
-    webCtx.tools.register(defineTool({
+    registerTool({
       name: 'browser_login_status',
       description: '查询 TinTin 内置浏览器各平台的登录状态（cookie 条数）。用例：下载/抽取前判断平台是否已登录；count>0 视为有登录痕迹。',
       parameters: {},
@@ -927,9 +940,9 @@ export async function apply(ctx) {
         const summary = Object.entries(counts).map(([k, v]) => k + ':' + v).join(' ') || '（无）'
         return { ok: true, counts: summary }
       },
-    }))
+    })
 
-    webCtx.tools.register(defineTool({
+    registerTool({
       name: 'hotspot_capture',
       description: '采集今日各平台热榜（抖音/小红书/B站，隐藏窗口采集，约 15-25 秒）。清单落盘 userData/hotspots/hotspots_sync.json 并返回本次采集条数。用例：选题/热点文案创作前获取实时热榜。',
       parameters: {},
@@ -949,7 +962,7 @@ export async function apply(ctx) {
         }
         return { ok: false, count: 0, message: '回环服务未返回结果' }
       },
-    }))
+    })
     // WP-5 agent 工具组（2026-09-25 用户裁决：拆解路由服务端 + 合理使用服务端
     // 能力 + 聚焦业务；dsh 底层零改动，defineTool 为上游插件 API）。montage
     // 工具经 callNative 复用 NATIVE_CHANNELS 已移植通道；识图/规划走 /llm 与
@@ -961,8 +974,11 @@ export async function apply(ctx) {
       log: (...a) => ctx.logger.info('tintin-bundle:', ...a),
       warn: (...a) => ctx.logger.warn('tintin-bundle:', ...a),
     })) {
-      webCtx.tools.register(defineTool(def))
+      registerTool(def)
     }
+  })
+
+  ctx.inject(['webServer'], (webCtx) => webCtx.effect(() => {
     const disposePing = webCtx.webServer.register({
       kind: 'exact',
       path: PING_PATH,
@@ -1165,6 +1181,16 @@ export async function apply(ctx) {
           sendJson(res, 400, { error: 'Invalid JSON body.' })
           return
         }
+        // 全量桥请求追踪（2026-09-27 用户裁决：所有桥请求含成功都可追溯）。
+        // ctx.logger.info 在 harness 日志传输规则里不落盘，trace 走子进程
+        // stdout（harness.log 的 [stdout] 行全量捕获）——这是唯一保证承载的
+        // 通道。每个请求一行：通道 + 目标 + 结果 + 耗时；失败另有 ✗ warn 详
+        // 述错误体，两行互补。
+        const started = Date.now()
+        const hint = typeof payload?.path === 'string' ? ` ${payload.path}` : ''
+        const trace = (outcome) => {
+          try { console.log(`[bridge] ${channel}${hint} -> ${outcome} ${Date.now() - started}ms`) } catch { /* 追踪不得影响分发 */ }
+        }
         try {
           // Native channel first: the polyfill forwards unknown window.tintin
           // members as {args:[...]} positional payloads. P0 progress note:
@@ -1172,13 +1198,16 @@ export async function apply(ctx) {
           // block until the final result — jobId-based progress is follow-up.
           if (nativeChannels[channel]) {
             const result = await tintinBridge.callNative(channel, payload?.args)
+            trace('ok')
             sendJson(res, 200, { result })
             return
           }
           const result = await tintinBridge.callServer(channel, payload)
+          trace('ok')
           sendJson(res, 200, { result })
         } catch (error) {
           const code = error?.code === 'unknown-channel' ? 404 : (error?.status ?? 502)
+          trace(`failed ${code}`)
           ctx.logger.warn('tintin-bundle: ipc %s failed: %s', channel, error?.message ?? error)
           sendJson(res, code, { error: error?.message ?? String(error) })
         }

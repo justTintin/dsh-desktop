@@ -654,7 +654,23 @@ const tintinClient = (() => {
           body: JSON.stringify(payload ?? {}),
         }).then(async (r) => {
           const j = await r.json().catch(() => ({}))
-          if (!r.ok) throw Object.assign(new Error(j.error ?? `HTTP ${r.status}`), { status: r.status })
+          if (!r.ok) {
+            // 诊断打点（2026-09-27 405 报障）：渲染层→宿主这一跳的失败原本
+            // 不落任何日志（宿主 ✗ warn 只覆盖宿主→服务端一段）。把状态与
+            // body 形态带回 harness.log——body 是 {detail}（FastAPI 直答）、
+            // {error}（宿主桥答）还是非 JSON，一望即知失败发生在哪一层。
+            const bodyText = (() => { try { return JSON.stringify(j) } catch { return String(j) } })()
+            try {
+              // console 兜底：宿主不可达时 env:log 同样发不出去，DevTools 至少可见
+              console.error(`[tintin][bridge] POST /tintin/ipc/${channel} -> ${r.status} ${bodyText.slice(0, 200)}`)
+              void window.tintin?.env?.log?.({
+                level: 'error',
+                tag: 'bridge',
+                message: `POST /tintin/ipc/${channel} -> ${r.status} body=${bodyText.slice(0, 300)}`,
+              })
+            } catch { /* 日志通道未就绪时静默，原始错误照常上抛 */ }
+            throw Object.assign(new Error(j.error ?? `HTTP ${r.status}`), { status: r.status })
+          }
           return j.result
         })
       // ipcRenderer.invoke 是位置参数；宿主 IPC 走单 JSON body，约定包成 { args }。
