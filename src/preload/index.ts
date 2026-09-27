@@ -10,6 +10,18 @@ import {
 import { isPluginLoadError } from './plugin-error-view'
 import { findBootFailureText } from './boot-failure'
 import { mountWindowsTitlebarLayout } from './windows-titlebar'
+import { mountMacosWindowChrome } from './macos-window-chrome'
+
+if (process.platform === 'darwin') {
+  const dispose = mountMacosWindowChrome(document, listener => {
+    const receive = (_event: Electron.IpcRendererEvent, value: unknown): void => {
+      if (typeof value === 'boolean') listener(value)
+    }
+    ipcRenderer.on('dsh-desktop:window-fullscreen', receive)
+    return () => ipcRenderer.removeListener('dsh-desktop:window-fullscreen', receive)
+  })
+  window.addEventListener('unload', dispose, { once: true })
+}
 
 // Intercept and persist localStorage to disk storage before any page script executes
 setupDesktopStoragePersistence()
@@ -268,6 +280,13 @@ contextBridge.exposeInMainWorld('dshDesktopFilePath', {
       return ''
     }
   }
+})
+
+// 上游 0.1.7 把目录选择器桥改名为 __DSH_DIRECTORY_PICKER__（Harness 的
+// dsh-client-ui-directory-picker-native 包按此名消费）；TinTin 插件继续走
+// 上方带 title 的 dshDesktopDirectoryPicker，两者共用同一 IPC 通道。
+contextBridge.exposeInMainWorld('__DSH_DIRECTORY_PICKER__', {
+  pick: (): Promise<string | null> => ipcRenderer.invoke('directory-picker:open')
 })
 
 /**
@@ -667,6 +686,10 @@ contextBridge.exposeInMainWorld(
   'dshDesktop',
   Object.freeze({
     restartHarness: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('harness:restart'),
+    getBuiltInImageGenerationStatus: (): Promise<{ enabled: boolean; marketActive: boolean }> =>
+      ipcRenderer.invoke('desktop-host-plugin:status'),
+    setBuiltInImageGenerationEnabled: (enabled: boolean): Promise<{ ok: boolean; enabled?: boolean; restartRequired?: boolean; reason?: string }> =>
+      ipcRenderer.invoke('desktop-host-plugin:set-enabled', enabled),
     uninstallMarket: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('market:uninstall'),
     openInFinder: (path: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('harness:open-in-finder', path)
   })

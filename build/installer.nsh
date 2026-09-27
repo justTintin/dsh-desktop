@@ -15,6 +15,7 @@
   !ifndef ONE_CLICK
     !include "LogicLib.nsh"
     !include "nsDialogs.nsh"
+    !include "${__FILEDIR__}\installer-directories.nsh"
 
     Var DshDirectoryPage
     Var DshDirectoryEdit
@@ -91,19 +92,6 @@
       ; Always pass — we create the directory in DshEnsureInstDirExists.
     FunctionEnd
 
-    ; Enable Win32 long paths (260+ char limit bypass) on Windows 10/11
-    ; to avoid ENOENT errors on deeply nested workspace or plugin paths.
-    ;
-    ; Add Windows Defender exclusions for the install and data directories.
-    ; Without this, Defender scans every one of the ~44,000 JS/Node files on
-    ; first launch, which can take 60–120 s on some machines before the Harness
-    ; becomes ready. Adding the paths here means new files extracted during
-    ; install are already covered before the user ever double-clicks the app.
-    ;
-    ; PowerShell is always present on Windows 10/11. -ErrorAction SilentlyContinue
-    ; means a non-elevated install (where the Defender API requires admin) fails
-    ; silently rather than aborting — the app still runs, just with the first-
-    ; launch scan. Re-running the installer as admin adds the exclusions.
     !macro customInstall
       WriteRegDWORD HKLM "SYSTEM\CurrentControlSet\Control\FileSystem" "LongPathsEnabled" 1
       ; Direct attempt (succeeds if installer was executed as Administrator)
@@ -127,6 +115,9 @@
       WriteRegDWORD HKCU "SOFTWARE\Microsoft\GameBar" "UseNexusForGameBarEnabled" 0
       WriteRegDWORD HKCU "System\GameConfigStore" "GameDVR_Enabled" 0
       WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\GameDVR" "AppCaptureEnabled" 0
+      ; 上游 0.1.7 的原子目录提升：放在 TinTin 孤儿清扫之后，避免旧 node.exe
+      ; 占用文件导致暂存目录改名失败。
+      !insertmacro dshFinishDirectories
       ; CHECK_APP_RUNNING force-kills the previous process, so will-quit never
       ; clears the session marker. Same-version overwrite would otherwise look
       ; like an unclean-exit. 当前会话标记位于本应用数据目录（$APPDATA\tintin，
@@ -137,4 +128,3 @@
     !macroend
   !endif
 !endif
-

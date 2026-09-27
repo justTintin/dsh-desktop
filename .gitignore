@@ -37,3 +37,7 @@ docs/mobile-connection-latency.zh.md
 # Not committed; fetched by scripts/fetch-tintin-binaries.mjs before packaging.
 resources/bin/
 packages/tintin-bundle/lib/resources/
+
+/.build/
+/packages/ppt-runtime/templates/
+/packages/ppt-bundles/
