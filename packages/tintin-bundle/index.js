@@ -14,6 +14,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import z from '@deepseek-ai/schemastery'
 import { resolveMachineIdSync } from './lib/machine-id.js'
 import { findLegacyConfigDir, planImportedSettingsRecovery, planLegacyMigration, readImportedTintinSection } from './lib/legacy-config.js'
+import { mergeConfigDocs, mergeTintinConfigStore, readTintinConfigStore } from './lib/tintin-config-store.js'
 import {
   createServerUrlResolver,
   createHttpRequest,
@@ -91,21 +92,23 @@ export function resolveBinary(bin) {
 // (tintin-first-boot.ts) so a fresh install is usable without manual RPC.
 const TintinConfig = z.object({
   server: z.object({
-    url: z.string(),
+    url: z.string().volatile(),
     // First-boot wizard marker: false until the user has confirmed a server
     // address through the setup overlay (probe → models → provider config).
-    provisioned: z.boolean().default(false),
+    provisioned: z.boolean().default(false).volatile(),
   }).default({}),
   // 本地配置（2026-09-24 用户裁决：恢复原客户端「更改」能力——缓存目录可选）；
   // 空 = 使用默认（本机工作区目录 Documents/tintin-workspace）。
   local: z.object({
-    cacheDir: z.string().default(''),
+    cacheDir: z.string().default('').volatile(),
   }).default({}),
 }).default({})
 
 // 0.1.7 配置模型：dsh-settings-file 的 ctx.settings.register 已退役，插件以
 // 导出的 Config schema 声明命名空间，loader 校验后作为 apply 第二参注入；
 // 编辑经 SettingsForms 写入 profile patch 后由 loader 重启本 fiber 生效。
+// 注意：字段必须标 volatile —— 否则 SettingsForms 拒绝一切写入
+// （"Plugin entry has no volatile fields"），存量迁移与设置卡都会哑失败。
 export const Config = TintinConfig
 
 export const name = 'tintin-bundle'
@@ -229,12 +232,13 @@ export async function apply(ctx, config) {
       node[path[path.length - 1]] = value
     }
     ctx.logger.info('tintin-bundle: migrating legacy config (%d keys)', ops.length)
-    // 0.1.7 写入路径：SettingsForms.update 合并进 profile entry config（条目 id
-    // 与本插件同名）。服务缺席/不可写时降级为警告，不阻塞启动。
-    if (typeof ctx.settings?.update === 'function') {
-      ctx.settings.update(name, patch).catch((e) => ctx.logger.warn('tintin-bundle: legacy migration failed: %s', e?.message ?? e))
-    } else {
-      ctx.logger.warn('tintin-bundle: settings service has no update(); legacy migration skipped this boot')
+    // 0.1.7 起写入落 TinTin 自有存储（lib/tintin-config-store.js）：
+    // SettingsForms/configEditor 拒写 overlay 插入的宿主插件条目
+    // （"overridden by a home patch"），设置服务路径对本插件不可用。
+    try {
+      mergeTintinConfigStore(process.env.DSH_HOME, patch)
+    } catch (e) {
+      ctx.logger.warn('tintin-bundle: legacy migration failed: %s', e?.message ?? e)
     }
     return undefined
   }, 'tintin-bundle: legacy config migration')
@@ -249,7 +253,10 @@ export async function apply(ctx, config) {
     const dshHome = process.env.DSH_HOME
     if (!dshHome) return undefined
     const section = readImportedTintinSection(join(dshHome, 'settings.yaml.imported'))
-    const ops = planImportedSettingsRecovery(section, config ?? {})
+    // 生效视图 = 自有存储 ∪ profile config（后者优先，与解析链同序）——
+    // 用户在任一层的重设都视为已配置，恢复不覆盖。
+    const effective = mergeConfigDocs(readTintinConfigStore(dshHome) ?? {}, config ?? {})
+    const ops = planImportedSettingsRecovery(section, effective)
     if (ops.length === 0) return undefined
     const patch = {}
     for (const { path, value } of ops) {
@@ -258,10 +265,12 @@ export async function apply(ctx, config) {
       node[path[path.length - 1]] = value
     }
     ctx.logger.info('tintin-bundle: recovering settings from settings.yaml.imported (%d keys)', ops.length)
-    if (typeof ctx.settings?.update === 'function') {
-      ctx.settings.update(name, patch).catch((e) => ctx.logger.warn('tintin-bundle: settings recovery failed: %s', e?.message ?? e))
-    } else {
-      ctx.logger.warn('tintin-bundle: settings service has no update(); settings recovery skipped this boot')
+    // 写入落 TinTin 自有存储（理由同上：设置服务拒写 overlay 条目）；
+    // 桥接解析链下一请求即读到，无需等待 fiber 重启。
+    try {
+      mergeTintinConfigStore(process.env.DSH_HOME, patch)
+    } catch (e) {
+      ctx.logger.warn('tintin-bundle: settings recovery failed: %s', e?.message ?? e)
     }
     return undefined
   }, 'tintin-bundle: settings.yaml.imported recovery')
@@ -302,6 +311,7 @@ export async function apply(ctx, config) {
     : null
   const getServerUrl = createServerUrlResolver({
     readConfig: (key) => key === 'server.url' ? config?.server?.url : undefined,
+    readTintinStore: () => readTintinConfigStore(process.env.DSH_HOME),
     readAiConfig,
   })
   const getMachineId = () => resolveMachineIdSync()

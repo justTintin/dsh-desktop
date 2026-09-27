@@ -41,9 +41,24 @@ describe('tintin machine-id', () => {
 })
 
 describe('tintin server-proxy', () => {
-  it('resolves server.url first, then ai_config, then the default', () => {
+  it('resolves server.url first, then the TinTin store, then ai_config, then the default', () => {
     const withConfig = createServerUrlResolver({ readConfig: () => 'http://192.168.111.31:8000/' })
     expect(withConfig()).toBe('http://192.168.111.31:8000') // trailing slash stripped
+
+    // 0.1.7 起第二档:TinTin 自有存储(设置服务拒写 overlay 条目的替代持久层)
+    const withStore = createServerUrlResolver({
+      readConfig: () => null,
+      readTintinStore: () => ({ server: { url: 'http://192.168.111.31:8000' } }),
+      readAiConfig: () => ({ server_url: 'http://10.0.0.2:9000' }),
+    })
+    expect(withStore()).toBe('http://192.168.111.31:8000')
+
+    // 显式 profile config 仍优先于存储档
+    const configWins = createServerUrlResolver({
+      readConfig: () => 'http://10.0.0.5:5000',
+      readTintinStore: () => ({ server: { url: 'http://192.168.111.31:8000' } }),
+    })
+    expect(configWins()).toBe('http://10.0.0.5:5000')
 
     const withAi = createServerUrlResolver({ readConfig: () => null, readAiConfig: () => ({ server_url: 'http://10.0.0.2:9000' }) })
     expect(withAi()).toBe('http://10.0.0.2:9000')

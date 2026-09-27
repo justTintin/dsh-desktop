@@ -14,16 +14,26 @@ import { URL } from 'node:url'
 /**
  * Server URL resolution chain (SRC getServerUrl, L72-93):
  *   1. config `server.url` (live, set from the settings card)
- *   2. ai_config.json `server_url` / `server.url` (legacy desktop fallback)
- *   3. built-in default http://127.0.0.1:8766
- * `readConfig` is injected by the host (WP-1 config seam); `readAiConfig`
- * reads a legacy ai_config.json when one exists (path injected, may be null).
+ *   2. TinTin-owned store <DSH_HOME>/tintin/config.json (0.1.7: the settings
+ *      service refuses writes for overlay-inserted host plugins, so TinTin's
+ *      own config persists here — wizard/card/migrations all write this file)
+ *   3. ai_config.json `server_url` / `server.url` (legacy desktop fallback)
+ *   4. built-in default http://127.0.0.1:8766
+ * `readConfig` is injected by the host (WP-1 config seam); `readTintinStore`
+ * and `readAiConfig` are file readers, absent by default.
  */
-export function createServerUrlResolver({ readConfig, readAiConfig } = {}) {
+export function createServerUrlResolver({ readConfig, readTintinStore, readAiConfig } = {}) {
   return function getServerUrl() {
     if (typeof readConfig === 'function') {
       try {
         const u = readConfig('server.url')
+        if (u) return String(u).replace(/\/$/, '')
+      } catch { /* fall through */ }
+    }
+    if (typeof readTintinStore === 'function') {
+      try {
+        const store = readTintinStore()
+        const u = store && store.server && store.server.url
         if (u) return String(u).replace(/\/$/, '')
       } catch { /* fall through */ }
     }

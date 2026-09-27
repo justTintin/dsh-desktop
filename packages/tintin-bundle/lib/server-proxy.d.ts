@@ -1,5 +1,7 @@
 export interface ServerUrlResolverDeps {
   readConfig?: (key: string) => unknown
+  /** TinTin-owned store (<DSH_HOME>/tintin/config.json) reader — resolution tier 2. */
+  readTintinStore?: () => { server?: { url?: string }; [key: string]: unknown } | null
   readAiConfig?: () => { server_url?: string; server?: { url?: string } } | null
 }
 export function createServerUrlResolver(deps?: ServerUrlResolverDeps): () => string

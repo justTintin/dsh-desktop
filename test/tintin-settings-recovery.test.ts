@@ -2,14 +2,15 @@
 // 事故:0.1.7 设置重构把旧库改名为 settings.yaml.imported,上游迁移只搬了
 // 上游命名空间,tintin-bundle 段(server.url/provisioned, local.cacheDir)滞留,
 // 桥接静默回落内置默认 127.0.0.1:8766,业务路由全线 ECONNREFUSED。
-// 纯逻辑(planImportedSettingsRecovery)由 tintin-legacy-config.test.ts 覆盖;
-// 本文件用 mock cordis ctx 驱动真实 apply(),钉住「effect 读文件→计划→写回
-// settings.update」这条接线,以及「用户升级后重设过的值不被覆盖」。
+// 纯逻辑(planImportedSettingsRecovery / tintin-config-store)由各自单测覆盖;
+// 本文件用 mock cordis ctx 驱动真实 apply(),钉住「effect 读文件→计划→写入
+// 自有存储」这条接线,以及「存储或 profile 里已重设的值不被覆盖」。
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { apply } from '../packages/tintin-bundle/index.js'
+import { readTintinConfigStore } from '../packages/tintin-bundle/lib/tintin-config-store.js'
 
 const IMPORTED_YAML = `tintin-bundle:
   server:
@@ -80,10 +81,10 @@ describe('tintin-bundle settings.yaml.imported recovery wiring', () => {
     return { ctx: makeCtx(), config: configCurrent ?? {} }
   }
 
-  it('recovers the stranded section into settings.update on boot', async () => {
+  it('recovers the stranded section into the TinTin-owned store on boot', async () => {
     const { ctx, config } = seedEnv(IMPORTED_YAML)
     await apply(ctx as never, config)
-    expect(ctx.settings.update).toHaveBeenCalledWith('tintin-bundle', {
+    expect(readTintinConfigStore(home)).toEqual({
       server: { url: 'http://192.168.111.31:8000', provisioned: true },
       local: { cacheDir: 'D:\\Media\\cache' },
     })
@@ -94,12 +95,25 @@ describe('tintin-bundle settings.yaml.imported recovery wiring', () => {
     for (const d of ctx.disposers) (d as () => void)()
   })
 
-  it('never overwrites a server.url the user re-set after the upgrade', async () => {
+  it('never overwrites a server.url the user re-set (profile config layer)', async () => {
     const { ctx, config } = seedEnv(IMPORTED_YAML, { server: { url: 'http://10.0.0.9:9000' } })
     await apply(ctx as never, config)
-    expect(ctx.settings.update).toHaveBeenCalledWith('tintin-bundle', {
+    expect(readTintinConfigStore(home)).toEqual({
       server: { provisioned: true },
       local: { cacheDir: 'D:\\Media\\cache' },
+    })
+    for (const d of ctx.disposers) (d as () => void)()
+  })
+
+  it('never overwrites a server.url already in the TinTin store layer', async () => {
+    const { ctx, config } = seedEnv(IMPORTED_YAML)
+    // 存储层已有用户重设的值 → 恢复必须停手(第二启动起幂等)。
+    const { mergeTintinConfigStore } = await import('../packages/tintin-bundle/lib/tintin-config-store.js')
+    mergeTintinConfigStore(home, { server: { url: 'http://10.0.0.8:8000', provisioned: true }, local: { cacheDir: 'E:\\mine' } })
+    await apply(ctx as never, config)
+    expect(readTintinConfigStore(home)).toEqual({
+      server: { url: 'http://10.0.0.8:8000', provisioned: true },
+      local: { cacheDir: 'E:\\mine' },
     })
     for (const d of ctx.disposers) (d as () => void)()
   })
@@ -110,10 +124,7 @@ describe('tintin-bundle settings.yaml.imported recovery wiring', () => {
       local: { cacheDir: 'D:\\Media\\cache' },
     })
     await apply(ctx as never, config)
-    const recoveryCalls = ctx.settings.update.mock.calls.filter(([, patch]) =>
-      typeof patch === 'object' && patch !== null && ('server' in patch || 'local' in patch),
-    )
-    expect(recoveryCalls).toEqual([])
+    expect(readTintinConfigStore(home)).toBeNull()
     for (const d of ctx.disposers) (d as () => void)()
   })
 })
