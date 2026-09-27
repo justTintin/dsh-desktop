@@ -118,7 +118,12 @@ it('publishes a migrated custom preset through the real Harness web registry', a
     logPath: join(home, 'runtime.log'),
     preferredPort: 0,
     startupTimeoutMs: 30_000,
-    launchProcess: (executable, args, options) => spawn(executable, args, options),
+    launchProcess: (executable, args, options) => {
+      const child = spawn(executable, args, options)
+      // HarnessChildProcess.pid 契约为 number | null（Windows 退出连树杀的目标）；
+      // ChildProcess.pid 是 number | undefined —— 与 src/main/index.ts 同一归一模式。
+      return Object.assign(child, { pid: child.pid ?? null })
+    },
     onChanged() {}
   })
   try {

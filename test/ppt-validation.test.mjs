@@ -16,7 +16,9 @@ beforeAll(async () => {
   packageRoot = path.resolve('node_modules/dsh-ppt')
   ;({ apply } = await import(pathToFileURL(path.join(packageRoot, 'lib/index.js'))))
   cli = path.join(packageRoot, 'lib/bin.js')
-})
+  // The projected dsh-ppt bundle is ~10MB of ESM; under a full parallel suite
+  // on Windows the import alone can exceed the 10s default hook timeout.
+}, 60_000)
 afterEach(async () => { for (const dir of cleanups.splice(0)) await rm(dir, { recursive: true, force: true }) })
 
 async function fixture({ broken = true, malformed = false } = {}) {

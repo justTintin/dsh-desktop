@@ -51,6 +51,11 @@ describe('DSH Desktop client slot occupants', () => {
       type,
       props: { ...props, children }
     })
+    const BrandWordmark = vi.fn()
+    const FishLogo = vi.fn()
+    // 0.1.7 起 client.js 还会从这里取 MenuItemButton（会话菜单项），
+    // TinTin 的品牌槽位不使用前两个，但 mock 必须覆盖整条 require。
+    const MenuItemButton = vi.fn()
     const plugin = definition!.factory((id) => {
       if (id === 'react') {
         return {
@@ -58,6 +63,9 @@ describe('DSH Desktop client slot occupants', () => {
           useEffect: (effect: () => void | (() => void)) => effect(),
           useState: (initial: unknown) => [initial, vi.fn()]
         }
+      }
+      if (id === '@deepseek-ai/dsh-client-ui-primitives') {
+        return { BrandWordmark, FishLogo, MenuItemButton }
       }
       throw new Error(`Unexpected client dependency: ${id}`)
     })

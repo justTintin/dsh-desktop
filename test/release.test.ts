@@ -250,7 +250,7 @@ describe('GitHub release contract', () => {
       dependencies: Record<string, string>
       build: {
         publish: Array<{ provider: string; url?: string; owner?: string; repo?: string }>
-        win: { verifyUpdateCodeSignature: boolean; signtoolOptions: { publisherName: string } }
+        win: { verifyUpdateCodeSignature: boolean; signtoolOptions?: { publisherName: string } }
       }
     }
     const workflow = await readFile(
@@ -264,8 +264,10 @@ describe('GitHub release contract', () => {
       // real feed exists; this placeholder URL is inert (never fetched).
       { provider: 'generic', url: 'https://updates.tintin.example.com/desktop/' }
     ])
-    expect(packageJson.build.win.verifyUpdateCodeSignature).toBe(true)
-    expect(packageJson.build.win.signtoolOptions.publisherName).toBe('Beijing Shuju Xiangsu Intelligence Technology Co., Ltd.')
+    // TinTin fork: signing story undecided — upstream's publisher cert is not
+    // ours, so the win target stays unsigned until a TinTin signing ruling.
+    expect(packageJson.build.win.verifyUpdateCodeSignature).toBe(false)
+    expect(packageJson.build.win.signtoolOptions).toBeUndefined()
     for (const asset of [
       'latest-mac-arm64.yml',
       'latest-mac-x64.yml',

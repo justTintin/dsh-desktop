@@ -103,6 +103,11 @@ const TintinConfig = z.object({
   }).default({}),
 }).default({})
 
+// 0.1.7 配置模型：dsh-settings-file 的 ctx.settings.register 已退役，插件以
+// 导出的 Config schema 声明命名空间，loader 校验后作为 apply 第二参注入；
+// 编辑经 SettingsForms 写入 profile patch 后由 loader 重启本 fiber 生效。
+export const Config = TintinConfig
+
 export const name = 'tintin-bundle'
 // settings: TinTin config seam (server.url etc.). tools/webServer injected via
 // scoped ctx.inject below so the tool half still loads where no web server runs.
@@ -152,7 +157,7 @@ function sendJson(res, status, payload) {
   res.end(body)
 }
 
-export async function apply(ctx) {
+export async function apply(ctx, config) {
   // V7 job registry: in-memory for the P0 probe; WP-1 swaps in the durable
   // registry that drives the /tintin/jobs/<id> polling contract.
   const jobs = new Map()
@@ -202,11 +207,11 @@ export async function apply(ctx) {
   })
 
   // ── WP-1 foundation: config seam + server bridge ─────────────────────────
-  // Config seam: TinTin's server.url lives in the harness settings namespace
-  // 'tintin' (registered below). readConfig reads the committed value; the
-  // legacy ai_config.json path is injected by the shell via TINTIN_AI_CONFIG
-  // (WP-1 shell hook), absent by default.
-  const tintinSettings = ctx.settings.register(name, TintinConfig, { applies: 'live' })
+  // Config seam: TinTin's server.url lives in this plugin's Config namespace
+  // (0.1.7: validated entry config arrives as apply's second argument — the
+  // retired dsh-settings-file register() used to hand out a live handle here).
+  // readConfig reads the committed value; the legacy ai_config.json path is
+  // injected by the shell via TINTIN_AI_CONFIG (WP-1 shell hook), absent by default.
 
   // One-shot legacy config migration on boot (A2: config only). Reads the old
   // client's split-domain config and writes differing values into this
@@ -215,7 +220,7 @@ export async function apply(ctx) {
     const appData = process.env.APPDATA || null
     const legacyDir = findLegacyConfigDir(appData ?? undefined)
     if (!legacyDir) return undefined
-    const ops = planLegacyMigration(legacyDir, tintinSettings.get())
+    const ops = planLegacyMigration(legacyDir, config ?? {})
     if (ops.length === 0) return undefined
     const patch = {}
     for (const { path, value } of ops) {
@@ -224,7 +229,13 @@ export async function apply(ctx) {
       node[path[path.length - 1]] = value
     }
     ctx.logger.info('tintin-bundle: migrating legacy config (%d keys)', ops.length)
-    tintinSettings.update(patch).catch((e) => ctx.logger.warn('tintin-bundle: legacy migration failed: %s', e?.message ?? e))
+    // 0.1.7 写入路径：SettingsForms.update 合并进 profile entry config（条目 id
+    // 与本插件同名）。服务缺席/不可写时降级为警告，不阻塞启动。
+    if (typeof ctx.settings?.update === 'function') {
+      ctx.settings.update(name, patch).catch((e) => ctx.logger.warn('tintin-bundle: legacy migration failed: %s', e?.message ?? e))
+    } else {
+      ctx.logger.warn('tintin-bundle: settings service has no update(); legacy migration skipped this boot')
+    }
     return undefined
   }, 'tintin-bundle: legacy config migration')
 
@@ -263,7 +274,7 @@ export async function apply(ctx) {
     ? () => { try { return existsSync(aiConfigPath) ? JSON.parse(readFileSync(aiConfigPath, 'utf8')) : null } catch { return null } }
     : null
   const getServerUrl = createServerUrlResolver({
-    readConfig: (key) => { const v = tintinSettings.get(); return key === 'server.url' ? v?.server?.url : undefined },
+    readConfig: (key) => key === 'server.url' ? config?.server?.url : undefined,
     readAiConfig,
   })
   const getMachineId = () => resolveMachineIdSync()
@@ -329,7 +340,7 @@ export async function apply(ctx) {
   // 缓存目录解析（env:cacheDir 与 ytdlp 门共用）：设置 local.cacheDir（通用设置
   // 卡「更改」写入）> 默认本机工作区目录 Documents/tintin-workspace。
   const resolveCacheDir = () => {
-    const configured = String(tintinSettings.get()?.local?.cacheDir || '').trim()
+    const configured = String(config?.local?.cacheDir || '').trim()
     return configured
       || process.env.TINTIN_WORKSPACE_DIR
       || join(process.env.USERPROFILE || process.env.HOME || '.', 'Documents', 'tintin-workspace')
@@ -1119,7 +1130,7 @@ export async function apply(ctx) {
         const resolved = normalize(requested)
         // 白名单 = 生效缓存目录 + 默认工作区 + 过渡期旧缓存目录
         const home = process.env.DSH_HOME || ''
-        const configured = String(tintinSettings.get()?.local?.cacheDir || '').trim()
+        const configured = String(config?.local?.cacheDir || '').trim()
         const roots = [
           configured,
           process.env.TINTIN_WORKSPACE_DIR || join(process.env.USERPROFILE || process.env.HOME || '.', 'Documents', 'tintin-workspace'),

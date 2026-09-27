@@ -1,6 +1,21 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 
+/** Windows AV/indexer handles make an atomic rename fail transiently (EPERM/
+ * EBUSY) right after a large fresh copy lands; bounded retry is the difference
+ * between a flaky pretest and a reliable one. */
+async function renameWithRetry(from, to, attempts = 10) {
+  for (let i = 1; ; i++) {
+    try {
+      await fs.rename(from, to)
+      return
+    } catch (error) {
+      if ((error?.code !== 'EPERM' && error?.code !== 'EBUSY') || i >= attempts) throw error
+      await new Promise((resolve) => setTimeout(resolve, 300 * i))
+    }
+  }
+}
+
 async function pathExists(candidate) {
   try {
     await fs.lstat(candidate)
@@ -31,16 +46,16 @@ export async function replaceInstalledPackages(stages, options = {}) {
     for (const [index, item] of prepared.entries()) {
       await options.beforeReplace?.(item.packageName, index)
       item.hadTarget = await pathExists(item.target)
-      if (item.hadTarget) await fs.rename(item.target, item.backup)
+      if (item.hadTarget) await renameWithRetry(item.target, item.backup)
       moved.push(item)
-      await fs.rename(item.temporary, item.target)
+      await renameWithRetry(item.temporary, item.target)
     }
   } catch (error) {
     const rollbackErrors = []
     for (const item of moved.reverse()) {
       try {
         await fs.rm(item.target, { recursive: true, force: true })
-        if (item.hadTarget && await pathExists(item.backup)) await fs.rename(item.backup, item.target)
+        if (item.hadTarget && await pathExists(item.backup)) await renameWithRetry(item.backup, item.target)
       } catch (rollbackError) {
         rollbackErrors.push(rollbackError)
       }

@@ -24,8 +24,8 @@
   ],
   "scripts": {
     "postinstall": "patch-package && node scripts/install-brand-assets.mjs && install-electron --no",
-    "dev": "npm run tintin:media --silent && npm run ppt:build && electron-vite dev",
-    "build": "npm run tintin:media --silent && npm run ppt:build && electron-vite build",
+    "dev": "npm run ppt:build && npm run tintin:media --silent && electron-vite dev",
+    "build": "npm run ppt:build && npm run tintin:media --silent && electron-vite build",
     "tintin:media": "vite build -c packages/tintin-media-bundle/vite.config.mts",
     "tintin:presets": "node scripts/build-tintin-presets.mjs",
     "contract:gen": "openapi-typescript http://192.168.111.31:8000/openapi.json -o packages/tintin-media-bundle/src/types/api-contract.generated.ts",
