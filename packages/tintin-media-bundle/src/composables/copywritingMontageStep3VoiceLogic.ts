@@ -65,7 +65,7 @@ export function fancyDrawtextToPreview(style: string): Record<string, string> | 
   if (!s) return null
   const pick = (k: string): string => {
     const m = s.match(new RegExp(`${k}=([^:]*)`))
-    return m ? m[1] : ''
+    return m?.[1] ?? ''
   }
   const hex = (v: string): string => {
     const t = v.trim().toLowerCase()
@@ -73,7 +73,7 @@ export function fancyDrawtextToPreview(style: string): Record<string, string> | 
     if (t === 'white') return '#FFFFFF'
     if (t === 'black') return '#000000'
     const m = t.match(/^0x([0-9a-f]{6})/)
-    return m ? `#${m[1].toUpperCase()}` : ''
+    return m?.[1] ? `#${m[1].toUpperCase()}` : ''
   }
   const color = hex(pick('fontcolor'))
   if (!color) return null
@@ -132,8 +132,10 @@ export function cleanRewriteContent(content: string): string {
   let c = String(content || '')
   if (c.startsWith('```')) {
     const lines = c.split('\n')
-    if (lines[0].startsWith('```')) lines.shift()
-    if (lines.length && lines[lines.length - 1].startsWith('```')) lines.pop()
+    const first = lines[0] ?? ''
+    if (first.startsWith('```')) lines.shift()
+    const last = lines[lines.length - 1]
+    if (lines.length && last?.startsWith('```')) lines.pop()
     c = lines.join('\n').trim()
   }
   if ((c.startsWith('"') && c.endsWith('"')) || (c.startsWith("'") && c.endsWith("'"))) {
@@ -188,3 +190,23 @@ export const FANCY_POSITION_OPTIONS = [
   { label: '左下角', value: 'bottom_left' },
   { label: '右下角', value: 'bottom_right' },
 ]
+
+/* ── 分镜 tab 名·保存回学规则（2026-09-25 用户裁决）────────────────── */
+
+/**
+ * tab 默认名判定：与 nextStoryboardName 的自增正则同源
+ * （useCopywritingMontageStep3Voice `/^脚本(\d+)$/`）。
+ */
+export function isAutoStoryboardName(name: string): boolean {
+  return /^脚本\d+$/.test(String(name || '').trim())
+}
+
+/**
+ * 保存成功后 tab 名回学：tab 名是本地标签（默认「脚本N」自增，可双击重命名），
+ * 服务端身份（topic/scriptId）走信息行——保存后若名字仍是默认「脚本N」则回学
+ * 本次选题，用户双击重命名过的名字保留不覆盖。选题为空/全空白维持原名。
+ */
+export function storyboardNameAfterSave(name: string, topic: string): string {
+  const t = String(topic || '').trim()
+  return isAutoStoryboardName(name) && t ? t : String(name || '')
+}

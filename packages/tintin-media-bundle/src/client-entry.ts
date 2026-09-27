@@ -18,7 +18,7 @@ import App from './App.vue'
 // P3 tintin-ops-bundle；chrome 占位网格在本 provider 注册后被接管，P3 落地
 // 时把注册权迁往 ops-bundle 即可——注册表同名 'ops' 覆盖语义不变）
 import OpsApp from './OpsApp.vue'
-// 会话上下文条（WP-5b，2026-09-25）：conversation.input.accessory slot 内的
+// 会话上下文条（WP-5b，2026-09-25）：conversation.input.left slot 内的
 // Vue 应用——产品/素材/脚本选择写入工作区 task.json（不改 dsh 底层的注入面）
 import ContextBar from './components/workbench/ContextBar.vue'
 import './styles/tintin-tokens.css'
@@ -97,7 +97,7 @@ window.__ModuleLoader__!.load({
     const exports = module.exports
     Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' })
     // slots 注入（WP-5b，2026-09-25 用户裁决：不改 dsh 底层——上下文条经上游
-    // conversation.input.accessory slot 挂载，该 slot 由本仓既有
+    // conversation.input.left slot 挂载，该 slot 由本仓既有
     // dsh-client-ui-conversation patch 提供，零新增补丁）。视图注册仍在
     // 实例化时完成；apply 只负责 slot 注册（服务缺失时静默降级：无上下文条，
     // 不影响会话与视图）。
@@ -134,9 +134,9 @@ function registerContextBarSlot(host: SlotHost, require?: (id: string) => unknow
   // 展示函数名便于 React DevTools / slot 调试定位
   Object.defineProperty(TintinContextAccessory, 'name', { value: 'TintinContextAccessory' })
 
-  slots.inject('conversation.input.accessory', () =>
+  slots.inject('conversation.input.left', () =>
     slots.register(
-      { name: 'conversation.input.accessory', id: 'tintin-context-bar', order: 30 },
+      { name: 'conversation.input.left', id: 'tintin-context-bar', order: 30 },
       TintinContextAccessory,
     ))
 }

@@ -161,6 +161,7 @@ onMounted(() => {
       <CopywritingMontage v-if="active === 'copywriting-montage'" />
       <JianYingTemplates v-else-if="active === 'jianying-templates'" />
       <VoiceClone v-else-if="active === 'voice-clone'" />
+      <OtStoryboard v-else-if="active === 'storyboard'" />
       <CoverMaker v-else-if="active === 'cover-design'" />
       <ImageMatting v-else-if="active === 'image-matting'" />
       <AudioGen v-else-if="active === 'audio-gen'" />

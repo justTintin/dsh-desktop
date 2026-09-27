@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // ═══════════════════════════════════════════════════════════════
 // ContextBar.vue — 会话输入区·业务上下文条（WP-5b，2026-09-25）
-// 挂载于 dsh conversation.input.accessory slot（Vue-in-slot，client-entry
+// 挂载于 dsh conversation.input.left slot（输入框工具行左段，与发送按钮同排）（Vue-in-slot，client-entry
 // React 薄壳负责挂载）。产品/素材/脚本三入口 + 已选胶囊 + task.json 同步态；
 // 选中即防抖写入工作区 task.json（useTaskContext），agent 经自带 read 工具
 // 消费——dsh 底层零改动（用户裁决）。

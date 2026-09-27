@@ -19,6 +19,7 @@ import {
   shotsNarrationText, buildCopywritingStoryboardPrompt,
   type TextFxTrack, type SubtitleStylePreset, type PrecomposePlan, type VoiceRow,
 } from '../copywritingMontageLogic'
+import { storyboardNameAfterSave } from '../copywritingMontageStep3VoiceLogic'
 import { notify, errText, joinPath } from './context'
 import { readCacheDir } from '../useSettingsConfig'
 import {
@@ -986,6 +987,9 @@ function clearVoiceProgressListener(): void {
       // 2026-09-22 用户裁决：脚本身份统一——tab 回学服务端脚本 id（同 sync 口径）
       const sid = (res as { id?: unknown }).id
       if (sid && tab && !tab.scriptId) tab.scriptId = String(sid)
+      // 2026-09-25 用户裁决：保存成功后 tab 名回学选题——仍是默认「脚本N」才回学，
+      // 用户双击重命名过的名字保留（storyboardNameAfterSave）
+      if (tab) tab.name = storyboardNameAfterSave(tab.name, tab.topic)
       const total = Math.round(Number(payload.total_duration) || 0)
       statusText.value = `完成： 分镜脚本已保存（${payload.shot_count} 镜 · ${total}s · 选题：${payload.topic}）`
       notify('保存成功', `分镜脚本已保存到脚本库（${payload.shot_count} 镜 · ${total}s · 选题：${payload.topic}），工作台「选择脚本」刷新后可选。`)
