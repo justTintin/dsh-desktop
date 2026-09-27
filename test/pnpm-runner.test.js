@@ -268,7 +268,10 @@ describe('packaged pnpm runner', () => {
     const result = await runWithLockRecovery('/node', ['/pnpm.cjs', 'add', 'x'], {
       spawnProcess,
       moveAside,
-      wait: async () => undefined
+      wait: async () => undefined,
+      report: () => undefined,
+      outStream: { write: () => undefined },
+      errStream: { write: () => undefined }
     })
 
     expect(result.code).toBe(0)
@@ -281,7 +284,10 @@ describe('packaged pnpm runner', () => {
 
     const result = await runWithLockRecovery('/node', ['/pnpm.cjs', 'add', 'x'], {
       spawnProcess,
-      wait: async () => undefined
+      wait: async () => undefined,
+      report: () => undefined,
+      outStream: { write: () => undefined },
+      errStream: { write: () => undefined }
     })
 
     expect(result.code).toBe(1)
@@ -298,7 +304,10 @@ describe('packaged pnpm runner', () => {
     const result = await runWithLockRecovery('/node', ['/pnpm.cjs', 'add', 'x'], {
       spawnProcess,
       moveAside,
-      wait: async () => undefined
+      wait: async () => undefined,
+      report: () => undefined,
+      outStream: { write: () => undefined },
+      errStream: { write: () => undefined }
     })
 
     expect(result.code).toBe(0)
@@ -320,7 +329,10 @@ describe('packaged pnpm runner', () => {
       exists: () => true,
       listEntries: async () => [],
       wait: async () => undefined,
-      now: () => 1234
+      now: () => 1234,
+      report: () => undefined,
+      outStream: { write: () => undefined },
+      errStream: { write: () => undefined }
     })
 
     expect(result.code).toBe(0)
@@ -340,7 +352,9 @@ describe('packaged pnpm runner', () => {
       idleTimeoutMs: 5,
       kill: (child) => child.kill(),
       watchActivity: () => () => undefined,
-      report: (message) => lines.push(message)
+      report: (message) => lines.push(message),
+      outStream: { write: () => undefined },
+      errStream: { write: () => undefined }
     })
 
     expect(result.code).toBe(1)
@@ -368,7 +382,9 @@ describe('packaged pnpm runner', () => {
           stopWatching += 1
         }
       },
-      report: () => undefined
+      report: () => undefined,
+      outStream: { write: () => undefined },
+      errStream: { write: () => undefined }
     })
 
     // Three quiet-but-busy stretches, each shorter than the allowance.
@@ -428,7 +444,9 @@ describe('packaged pnpm runner', () => {
       killGraceMs: 5,
       kill: (child) => child.kill(),
       watchActivity: () => () => undefined,
-      report: () => undefined
+      report: () => undefined,
+      outStream: { write: () => undefined },
+      errStream: { write: () => undefined }
     })
 
     expect(result.code).toBe(0)
@@ -450,7 +468,9 @@ describe('packaged pnpm runner', () => {
       killGraceMs: 5,
       kill: () => undefined,
       watchActivity: () => () => undefined,
-      report: () => undefined
+      report: () => undefined,
+      outStream: { write: () => undefined },
+      errStream: { write: () => undefined }
     })
 
     expect(result.code).toBe(1)
@@ -472,7 +492,9 @@ describe('packaged pnpm runner', () => {
       listEntries: async () => [],
       wait: async () => undefined,
       now: () => 1234,
-      report: (message) => lines.push(message)
+      report: (message) => lines.push(message),
+      outStream: { write: () => undefined },
+      errStream: { write: () => undefined }
     })
 
     expect(lines.join('\n')).toContain('retrying')
@@ -495,7 +517,10 @@ describe('packaged pnpm runner', () => {
       },
       exists: () => true,
       listEntries: async () => [],
-      wait: async () => undefined
+      wait: async () => undefined,
+      report: () => undefined,
+      outStream: { write: () => undefined },
+      errStream: { write: () => undefined }
     })
 
     expect(result.code).toBe(1)

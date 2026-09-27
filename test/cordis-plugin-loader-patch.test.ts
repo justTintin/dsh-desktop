@@ -53,8 +53,20 @@ describe('cordis-plugin-loader resolution patch', () => {
     }
     mockTree.getTasks = () => [hangingPromise]
 
-    await expect(mockTree.await({ timeout: 50 })).rejects.toThrow(
-      /failed to apply loader entry entry-99 \(slow-stuck-plugin\): plugin initialization timed out/
-    )
+    // 桩掉 console：loader 的超时告警属预期输出，打包门禁的控制台必须保持
+    // "只有真失败才出现错误行"（2026-09-27 用户裁决）——捕获后改为断言内容。
+    const warnings: string[] = []
+    const originalError = console.error
+    const originalWarn = console.warn
+    console.error = (...args: unknown[]) => { warnings.push(args.map(String).join(' ')) }
+    console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(' ')) }
+    try {
+      await expect(mockTree.await({ timeout: 50 })).rejects.toThrow(
+        /failed to apply loader entry entry-99 \(slow-stuck-plugin\): plugin initialization timed out/
+      )
+    } finally {
+      console.error = originalError
+      console.warn = originalWarn
+    }
   })
 })

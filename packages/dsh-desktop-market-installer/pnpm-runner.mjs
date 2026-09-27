@@ -328,6 +328,10 @@ function runPnpm(executable, args, options = {}) {
     stallAfterFailureMs = STALL_AFTER_FAILURE_MS,
     kill = killTree,
     watchActivity = watchProfileActivity,
+    // pnpm 自身诊断的透传目标（可注入：测试回放夹具输出时静默，避免模拟的
+    // 真实感错误行污染构建控制台）
+    outStream = process.stdout,
+    errStream = process.stderr,
     report = () => undefined
   } = options
 
@@ -410,8 +414,8 @@ function runPnpm(executable, args, options = {}) {
       stopWhenDoomed()
     }
 
-    child.stdout.on('data', (chunk) => observe(chunk, process.stdout))
-    child.stderr.on('data', (chunk) => observe(chunk, process.stderr))
+    child.stdout.on('data', (chunk) => observe(chunk, outStream))
+    child.stderr.on('data', (chunk) => observe(chunk, errStream))
     child.once('error', (error) => {
       clearTimeout(idle)
       clearTimeout(grace)
@@ -507,6 +511,8 @@ async function runWithLockRecoveryUnisolated(executable, args, options = {}) {
       stallAfterFailureMs,
       kill,
       watchActivity,
+      outStream: options.outStream,
+      errStream: options.errStream,
       report
     })
 
