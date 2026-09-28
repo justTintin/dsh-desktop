@@ -97,6 +97,120 @@ it('appends a legacy preset to a fresh Profile patch with comments and an empty 
   expect(await readFile(patchPath, 'utf8')).toBe(patch)
 })
 
+it('strips the unshippable workflow family from presets a previous conversion already wrote', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'dsh-legacy-preset-'))
+  homes.push(home)
+  const source = join(home, '.agent-presets', 'tintin-assistant')
+  const profile = join(home, 'profiles', 'web')
+  await mkdir(source, { recursive: true })
+  await mkdir(profile, { recursive: true })
+  // 0.1.5-era composition: the delegation group mounts the unpublished worker
+  // plus tool-workflow and tool-ralph behind an isolated workflowEngine,
+  // exactly what the 0.1.7-rc.2 closure cannot satisfy.
+  const composition = [
+    '- id: delegation',
+    '  name: cordis:group',
+    '  group: true',
+    '  isolate:',
+    '    workflowEngine: true',
+    '  config:',
+    '    - id: tool-subagent-control',
+    '      name: \'@deepseek-ai/dsh-tool-subagent-control\'',
+    '    - id: workflow-worker-thread',
+    '      name: \'@deepseek-ai/dsh-workflow-worker-thread\'',
+    '      config:',
+    '        provider: spawn',
+    '    - id: tool-workflow',
+    '      name: \'@deepseek-ai/dsh-tool-workflow\'',
+    '    - id: tool-ralph',
+    '      name: \'@deepseek-ai/dsh-tool-ralph\'',
+    '      config:',
+    '        subagentProvider: spawn',
+    '        maxRounds: 64',
+    '- id: planner',
+    '  name: cordis:group',
+    '  group: true',
+    '  isolate:',
+    '    planMode: true',
+    '  config:',
+    '    - id: plan-mode',
+    '      name: \'@deepseek-ai/dsh-tool-plan\'',
+    '- id: persona',
+    '  name: "@deepseek-ai/dsh-persona"',
+    '  disabled: !!js process.platform === "win32"',
+    ''
+  ].join('\n')
+  await writeFile(join(source, 'agent.cordis.yml'), composition)
+  const patchPath = join(profile, 'cordis.patch.yml')
+
+  const notes: string[] = []
+  await migrateLegacyAgentPresets(home, (line) => notes.push(line))
+  const converted = await readFile(patchPath, 'utf8')
+  expect(converted).toContain('- id: tool-workflow')
+  expect(converted).toContain('workflowEngine: true')
+
+  // A profile converted before the closure gap was known never re-converts,
+  // so the second run must repair the generated section in place.
+  await migrateLegacyAgentPresets(home, (line) => notes.push(line))
+  const repaired = await readFile(patchPath, 'utf8')
+  expect(repaired).not.toContain('tool-workflow')
+  expect(repaired).not.toContain('tool-ralph')
+  expect(repaired).not.toContain('workflow-worker-thread')
+  expect(repaired).not.toContain('workflowEngine')
+  expect(repaired).toContain('planMode: true')
+  expect(repaired).toContain('tool-subagent-control')
+  expect(repaired).toContain('disabled: !!js process.platform === "win32"')
+  expect(notes.some((line) => line.includes('removed the workflow tool rows'))).toBe(true)
+  expect(jsYaml.load(repaired, { schema: entryListSchema })).toBeInstanceOf(Array)
+  const backup = await readFile(`${patchPath}.pre-0.1.7-backup`, 'utf8')
+  expect(backup).toBe(converted)
+
+  await migrateLegacyAgentPresets(home, (line) => notes.push(line))
+  expect(await readFile(patchPath, 'utf8')).toBe(repaired)
+
+  // Sources may be long gone on machines that converted earlier; the repair
+  // reads the generated section, not the source directories.
+  await rm(join(home, '.agent-presets'), { recursive: true, force: true })
+  await writeFile(patchPath, repaired.replace(
+    '          plugins:\n',
+    '          plugins:\n            - id: tool-workflow\n              name: \'@deepseek-ai/dsh-tool-workflow\'\n'
+  ))
+  await migrateLegacyAgentPresets(home, (line) => notes.push(line))
+  const repairedWithoutSources = await readFile(patchPath, 'utf8')
+  expect(repairedWithoutSources).not.toContain('tool-workflow')
+  expect(repairedWithoutSources).toContain('planMode: true')
+})
+
+it('notes and keeps a broken Profile patch instead of throwing during repair', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'dsh-legacy-preset-'))
+  homes.push(home)
+  const profile = join(home, 'profiles', 'web')
+  await mkdir(profile, { recursive: true })
+  const broken = [
+    '- id: preset-tintin-assistant',
+    '  disabled: true',
+    '  disabled: false',
+    '',
+    '# dsh-desktop legacy presets begin',
+    '- insert:',
+    '    - id: preset-tintin-assistant',
+    '      name: \'@deepseek-ai/dsh-agent-preset\'',
+    '      config:',
+    '        id: tintin-assistant',
+    '        plugins:',
+    '              - id: tool-workflow',
+    '                name: \'@deepseek-ai/dsh-tool-workflow\'',
+    '# dsh-desktop legacy presets end',
+    ''
+  ].join('\n')
+  const patchPath = join(profile, 'cordis.patch.yml')
+  await writeFile(patchPath, broken)
+  const notes: string[] = []
+  await expect(migrateLegacyAgentPresets(home, (line) => notes.push(line))).resolves.toBeUndefined()
+  expect(await readFile(patchPath, 'utf8')).toBe(broken)
+  expect(notes.some((line) => line.includes('does not parse'))).toBe(true)
+})
+
 it('publishes a migrated custom preset through the real Harness web registry', async () => {
   const home = await mkdtemp(join(tmpdir(), 'dsh-legacy-preset-runtime-'))
   homes.push(home)

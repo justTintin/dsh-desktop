@@ -1543,7 +1543,17 @@ function launchHarness(): Promise<void> {
     desktopStorageManager?.switchProfile(join(dshHome, 'profiles', 'web'))
     runtime.note('[desktop] starting preset migrations')
     await migratePersonaPrefixesBeforeStart(dshHome)
-    await migrateLegacyAgentPresets(dshHome, (line) => runtime.note(line))
+    // A broken Profile patch must not stop the launch chain: the Harness still
+    // boots and surfaces its own structured diagnostic for the same file.
+    try {
+      await migrateLegacyAgentPresets(dshHome, (line) => runtime.note(line))
+    } catch (error) {
+      runtime.note(
+        `[desktop] legacy agent preset migration failed; continuing so the Harness can report the broken patch: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      )
+    }
     runtime.note('[desktop] preset migrations done; starting Harness')
     await runtime.start(launchDirectory)
 
