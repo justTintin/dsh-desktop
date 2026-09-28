@@ -95,6 +95,14 @@ export function seedTintinDefaults(dshHome: string, appDataDir: string | undefin
     const serverUrl = resolveSeedServerUrl(appDataDir)
     seedSettings(dshHome, serverUrl)
     seedCredentials(dshHome)
+    // 0.1.7 起 settings.yaml 会在启动时被改名 .imported，且其中的
+    // tintin-bundle 段因宿主插件 overlay 拒写而无法迁入 profile —— server.url
+    // 种子必须同时落 TinTin 自有存储（config.json），桥接解析链第二档启动即有值。
+    const storePath = join(dshHome, 'tintin', 'config.json')
+    if (!existsSync(storePath)) {
+      mkdirSync(join(dshHome, 'tintin'), { recursive: true })
+      writeFileSync(storePath, JSON.stringify({ server: { url: serverUrl } }, null, 2) + '\n', 'utf8')
+    }
   } catch (error) {
     // Provisioning must never block startup; a blank home still boots, the
     // user just configures through the settings card instead.
@@ -160,6 +168,44 @@ export async function ensureDefaultWorkspace(snapshot: RuntimeSnapshot): Promise
  * stored later is detected first and never overwritten. Runs once after the
  * harness is ready.
  */
+/** Read server.url from the TinTin-owned store (<DSH_HOME>/tintin/config.json),
+ * the only persistence the 0.1.7 settings service cannot refuse. Empty string
+ * when absent/malformed. */
+export function readStoreServerUrl(dshHome: string | undefined): string {
+  if (!dshHome) return ''
+  try {
+    const raw = JSON.parse(readFileSync(join(dshHome, 'tintin', 'config.json'), 'utf8')) as Record<string, unknown>
+    const url = (raw.server as { url?: unknown } | undefined)?.url
+    return typeof url === 'string' ? url.replace(/\/$/u, '') : ''
+  } catch { return '' }
+}
+
+/** Overridable in tests; production resolves the harness home from userData. */
+export let readDshHome: () => string | undefined = () => {
+  const home = process.env.DSH_HOME
+  if (home && home.length > 0) return home
+  return join(getAppUserData(), 'harness')
+}
+
+/** Test seam so the default resolver stays lazy (app may be unset in unit tests). */
+export function setDshHomeResolver(resolver: () => string | undefined): void {
+  readDshHome = resolver
+}
+
+function getAppUserData(): string {
+  // Lazy require keeps this module importable in unit tests (top-level
+  // `import { app } from 'electron'` breaks under vitest — the electron npm
+  // package has no named exports there) and before the app module is ready.
+  try {
+    // require (not import): the electron package only resolves in the built
+    // main bundle; in tests this throws and we return ''.
+    const electron = require('electron') as { app?: { getPath: (name: string) => string } }
+    return electron?.app?.getPath('userData') ?? ''
+  } catch {
+    return ''
+  }
+}
+
 export async function ensureTinTinProvider(snapshot: RuntimeSnapshot): Promise<void> {
   if (providerEnsured) return
   const base = snapshot.url
@@ -192,8 +238,13 @@ export async function ensureTinTinProvider(snapshot: RuntimeSnapshot): Promise<v
       namespaces?: Array<{ ns: string, value?: Record<string, unknown> }>
     } | undefined
     const namespaces = all?.namespaces ?? []
-    const serverUrl = String(
+    // serverUrl 优先取 settings 命名空间；0.1.7 起宿主插件条目被设置服务
+    // 拒写、迁移也滞留，describe 侧常为空 —— 兜底读 TinTin 自有存储
+    // <DSH_HOME>/tintin/config.json（tintin-bundle config:store 的落盘文件）。
+    // dshHome 由调用方通过 snapshot 启动参数之外的模块状态注入（readDshHome）。
+    const describedUrl = String(
       (namespaces.find((n) => n.ns === 'tintin-bundle')?.value as { server?: { url?: unknown } })?.server?.url ?? '')
+    const serverUrl = describedUrl.length > 0 ? describedUrl : readStoreServerUrl(readDshHome())
     const provider = (namespaces.find((n) => n.ns === 'llm-pi-ai')?.value as {
       providers?: Record<string, unknown>
     } | undefined)?.providers?.['tintin-server']

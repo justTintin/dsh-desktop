@@ -83,7 +83,7 @@ export function createTintinAgentTools({ httpRequest, callNative, readFile, log 
     },
     output: {
       schema: { type: 'object', additionalProperties: false, properties: {
-        ready: { type: 'boolean' }, plan: { type: 'object' }, error: { type: 'string' },
+        ready: { type: 'boolean' }, plan: { type: 'object', additionalProperties: true }, error: { type: 'string' },
       } },
       render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
     },
@@ -118,7 +118,7 @@ export function createTintinAgentTools({ httpRequest, callNative, readFile, log 
     },
     output: {
       schema: { type: 'object', additionalProperties: false, properties: {
-        steps: { type: 'array', items: { type: 'object' } }, raw: { type: 'string' }, error: { type: 'string' },
+        steps: { type: 'array', items: { type: 'object', additionalProperties: true } }, raw: { type: 'string' }, error: { type: 'string' },
       } },
       render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
     },
@@ -209,7 +209,7 @@ export function createTintinAgentTools({ httpRequest, callNative, readFile, log 
     },
     output: {
       schema: { type: 'object', additionalProperties: false, properties: {
-        result: { type: 'object' }, error: { type: 'string' },
+        result: { type: 'object', additionalProperties: true }, error: { type: 'string' },
       } },
       render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
     },

@@ -1056,6 +1056,9 @@ const tintinClient = (() => {
       const context = namespaced('context', {
         writeTask: (task) => call('context:writeTask', { args: [task] }),
       })
+      // config:store — TinTin 自有配置存储（0.1.7 起设置服务拒写宿主插件条目，
+      // 设置卡/首启向导的持久化走这里；读返回合并视图 自有存储∪profile config）。
+      const config = namespaced('config', {})
 
       window.tintin = {
         __dshPolyfill: true,
@@ -1068,6 +1071,7 @@ const tintinClient = (() => {
         env,
         media,
         context,
+        config,
       }
       console.info('[tintin] window.tintin polyfill installed')
     }
@@ -1107,18 +1111,17 @@ window.__ModuleLoader__.load({
       const [state, setState] = React.useState('loading') // loading|ready|saving|saved|error
       const [error, setError] = React.useState('')
       React.useEffect(() => {
-        tintinClient.settingsRpc('settings/describe', {}).then((all) => {
-          const ns = (all?.namespaces ?? []).find((n) => n.ns === 'tintin-bundle')
-          setUrl(String(ns?.value?.server?.url ?? ''))
+        // 读自有存储合并视图（0.1.7 起本插件条目配置设置服务拒写，持久化在
+        // <DSH_HOME>/tintin/config.json；settings/describe 读 profile 层不再是
+        // 权威源）。
+        window.tintin?.config?.storeGet?.().then((res) => {
+          setUrl(String(res?.value?.server?.url ?? ''))
           setState('ready')
         }).catch((e) => { setError(String(e?.message ?? e)); setState('error') })
       }, [])
       const save = () => {
         setState('saving'); setError('')
-        tintinClient.settingsRpc('settings/mutate', {
-          ns: 'tintin-bundle',
-          ops: [{ op: 'set', path: ['server', 'url'], value: url.replace(/\/$/u, '') }],
-        })
+        window.tintin?.config?.storeMerge?.({ server: { url: url.replace(/\/$/u, '') } })
           .then(() => setState('saved'))
           .catch((e) => { setError(String(e?.message ?? e)); setState('error') })
       }
@@ -1171,17 +1174,15 @@ window.__ModuleLoader__.load({
       }
       // 更改（2026-09-24 用户裁决：与原客户端一致——弹出原生文件夹选择框，
       // 选择后持久化为新的缓存目录。桌面端经 dshDesktopDirectoryPicker 出
-      // 原生对话框，选定路径经 settings/mutate 持久化，立即生效。）
+      // 原生对话框，选定路径写 TinTin 自有存储（0.1.7 起设置服务拒写宿主插件
+      // 条目），解析链即时生效。）
       const pickCacheDir = async () => {
         const picker = window.dshDesktopDirectoryPicker
         if (!picker?.pick) return
         try {
           const d = await picker.pick('选择本地缓存目录')
           if (!d) return // 取消
-          await tintinClient.settingsRpc('settings/mutate', {
-            ns: 'tintin-bundle',
-            ops: [{ op: 'set', path: ['local', 'cacheDir'], value: String(d) }],
-          })
+          await window.tintin?.config?.storeMerge?.({ local: { cacheDir: String(d) } })
           setCacheDir(String(d))
           setPickHint('缓存目录已保存')
         } catch (e) {
@@ -1263,16 +1264,18 @@ window.__ModuleLoader__.load({
 })
 
 async function maybeShowSetupWizard() {
+  // Provisioned 状态与预填地址读 TinTin 自有存储合并视图（0.1.7 起设置服务
+  // 拒写宿主插件条目，describe 的 tintin-bundle 命名空间不再是权威源）；
   // Settings may still be loading when plugins activate; retry briefly.
-  let ns
-  for (let i = 0; i < 10 && !ns; i++) {
+  let value
+  for (let i = 0; i < 10 && value === undefined; i++) {
     try {
-      const all = await tintinClient.settingsRpc('settings/describe', {})
-      ns = (all?.namespaces ?? []).find((n) => n.ns === 'tintin-bundle')
+      const res = await window.tintin?.config?.storeGet?.()
+      value = res?.value
     } catch { /* retry */ }
-    if (!ns) await new Promise((r) => setTimeout(r, 1500))
+    if (value === undefined) await new Promise((r) => setTimeout(r, 1500))
   }
-  if (!ns || ns.value?.server?.provisioned === true) return
+  if (!value || value?.server?.provisioned === true) return
 
   const el = document.createElement('div')
   el.id = 'tintin-setup-wizard'
@@ -1294,7 +1297,7 @@ async function maybeShowSetupWizard() {
   const status = el.querySelector('#tintin-setup-status')
   const go = el.querySelector('#tintin-setup-go')
   const skip = el.querySelector('#tintin-setup-skip')
-  input.value = String(ns.value?.server?.url ?? '')
+  input.value = String(value?.server?.url ?? '')
 
   const setBusy = (busy, text, isError) => {
     go.disabled = busy
@@ -1303,8 +1306,10 @@ async function maybeShowSetupWizard() {
     status.style.color = isError ? '#f87171' : (text && text.includes('✓') ? '#4ade80' : 'var(--dsw-alias-label-tertiary,#8b8b88)')
   }
   const finish = async (url, models, preferred) => {
-    const ops = [{ op: 'set', path: ['server', 'url'], value: url }, { op: 'set', path: ['server', 'provisioned'], value: true }]
-    await tintinClient.settingsRpc('settings/mutate', { ns: 'tintin-bundle', ops })
+    // TinTin 自有段写自有存储（设置服务拒写宿主插件条目）；provider 与默认
+    // 模型是 profile 层条目（llm-pi-ai / agent-default-model），设置服务可写，
+    // 仍走 settings/mutate。
+    await window.tintin?.config?.storeMerge?.({ server: { url, provisioned: true } })
     await tintinClient.settingsRpc('settings/mutate', {
       ns: 'llm-pi-ai',
       ops: [{
@@ -1321,7 +1326,7 @@ async function maybeShowSetupWizard() {
   }
 
   skip.onclick = async () => {
-    try { await tintinClient.settingsRpc('settings/mutate', { ns: 'tintin-bundle', ops: [{ op: 'set', path: ['server', 'provisioned'], value: true }] }) } catch { /* keep default */ }
+    try { await window.tintin?.config?.storeMerge?.({ server: { provisioned: true } }) } catch { /* keep default */ }
     el.remove()
   }
   go.onclick = async () => {

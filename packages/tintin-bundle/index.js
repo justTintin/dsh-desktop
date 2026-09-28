@@ -518,6 +518,23 @@ export async function apply(ctx, config) {
       }
       return { dir }
     },
+    // config:store — TinTin 自有配置存储读写（2026-09-28）。0.1.7 的设置服务
+    // 拒写 overlay 插入的宿主插件条目（"overridden by a home patch"），设置卡/
+    // 首启向导的持久化一律走这里（<DSH_HOME>/tintin/config.json）；桥接解析链
+    // 第二档即时读到，无需等 fiber 重启。get 返回合并视图（自有存储 ∪ profile
+    // config，后者优先）——与 server-proxy 解析链同序，任一层重设都算已配置。
+    'config:store:get': () => ({
+      value: mergeConfigDocs(readTintinConfigStore(process.env.DSH_HOME) ?? {}, config ?? {}),
+    }),
+    'config:store:merge': (args) => {
+      const patch = args?.[0]
+      if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return { error: 'config:store:merge requires an object patch' }
+      try {
+        return { value: mergeTintinConfigStore(process.env.DSH_HOME, patch) }
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : String(err) }
+      }
+    },
     // shell:openItem — 用系统默认方式打开文件/目录（SRC main.js: shell.openPath；
     // harness 子进程无 electron shell，按平台落 start/open/xdg-open）。
     // Windows 用 `cmd /c start "" <path>`：start 的第一个带引号参数是窗口标题，
