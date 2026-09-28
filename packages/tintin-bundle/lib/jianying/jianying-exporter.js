@@ -1488,14 +1488,18 @@ function exportMultiToDraft({ videoPaths, videoDurations = null, muteVideoAudio 
       const seenPaths = new Set()
       for (const [cat, list] of Object.entries(content.materials || {})) {
         if (!Array.isArray(list)) continue
-        for (const m of list) {
-          if (!m?.id) continue
-          const p = typeof m.path === 'string' ? m.path : ''
-          matById.set(m.id, m)
-          if (seenPaths.has(p)) continue
-          seenPaths.add(p)
-          if (!p || !fs.existsSync(p)) missingMedia.push({ name: m.material_name || cat, path: p || '(path 非字符串/缺失)' })
-        }
+      for (const m of list) {
+        if (!m?.id) continue
+        // 配置型素材（material_animations/material_effects/canvases 等）本就没有
+        // path 字段——缺失判定只针对带 path 的文件素材；但 path 存在且非字符串
+        // （对象泄漏 → "[object Object]" 类）仍要报出。
+        if (!('path' in m) || m.path === undefined) continue
+        const p = typeof m.path === 'string' ? m.path : `(path 非字符串: ${typeof m.path})`
+        matById.set(m.id, m)
+        if (seenPaths.has(p)) continue
+        seenPaths.add(p)
+        if (!fs.existsSync(p)) missingMedia.push({ name: m.material_name || cat, path: p })
+      }
       }
       // 轨道引用一致性：material_id 失联 = 轨道上的段没有可用素材（比 path 缺失更致命）
       let brokenRefs = 0
