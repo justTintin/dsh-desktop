@@ -281,7 +281,7 @@ const tabVoices = computed(() => {
             <input v-model.number="cloneParamsDlg.alpha" type="range" min="0" max="1" step="0.1" class="grow" />
           </div>
           </template>
-          <template v-else>
+          <template v-else-if="cloneParamsDlg.engine === 'qwen3'">
           <div class="cp-field">
             <span class="label">预置音色（speaker，可选）</span>
             <TSelect :model-value="qwen3Speaker" :options="qwen3Voices" :loading="qwen3VoicesLoading" placeholder="不选择则按参考样本克隆音色" @update:model-value="(v: string | number) => (qwen3Speaker = String(v))" />
@@ -290,6 +290,11 @@ const tabVoices = computed(() => {
             <span class="label">指令文本（instruct，可选）</span>
             <input v-model="qwen3Instruct" type="text" placeholder="用自然语言描述语气/语速，如：用轻快的语速说" />
             <span class="hint">QwenTTS 不支持语速/情感数值参数；语气与语速请用指令文本描述</span>
+          </div>
+          </template>
+          <template v-else-if="cloneParamsDlg.engine === 'voxcpm'">
+          <div class="cp-field">
+            <span class="hint">VoxCPM2 克隆参数只有「样本参考文本」（ref_text，必填——由样本转写自动填充，第三步上方可编辑）。不支持 IndexTTS 的语速/情感数值参数，也不支持 QwenTTS 的预置音色/指令文本。合成时长契约无上限声明，长文案由宿主按句拆分拼接。</span>
           </div>
           </template>
           <div class="cp-field">

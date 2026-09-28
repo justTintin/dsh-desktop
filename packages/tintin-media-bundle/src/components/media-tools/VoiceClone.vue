@@ -261,7 +261,8 @@ onMounted(loadCatalog)
 
     <!-- ③+ 引擎参数（2026-09-20 用户裁决：按引擎显示各自设置——
          IndexTTS=语速/情感/强度；QwenTTS=预置音色/指令文本。
-         此前 qwen3 下仍显示 IndexTTS 滑杆且参数被服务端忽略，致「变速不起作用」） -->
+         此前 qwen3 下仍显示 IndexTTS 滑杆且参数被服务端忽略，致「变速不起作用」；
+         2026-09-28：VoxCPM2（engine=voxcpm）=仅 ref_text（铁律），无数值参数，时长契约无上限） -->
     <div class="engine-params" v-if="ttsEngine === 'indextts'">
       <div class="form-field">
         <div class="field-head">
@@ -309,7 +310,7 @@ onMounted(loadCatalog)
 
     <!-- ③+ QwenTTS（Qwen3-TTS）专属参数（2026-09-20 用户裁决）：
          预置音色（speaker，与参考样本克隆二选一）+ 指令文本（instruct，可用自然语言描述语气/语速） -->
-    <div class="engine-params" v-else>
+    <div class="engine-params" v-else-if="ttsEngine === 'qwen3'">
       <div class="form-field">
         <label class="form-label">预置音色（speaker，可选）</label>
         <TSelect
@@ -330,6 +331,19 @@ onMounted(loadCatalog)
           placeholder="用自然语言描述语气/语速，如：用轻快的语速说"
         />
         <span class="form-hint">QwenTTS 不支持 IndexTTS 的语速/情感数值参数，语气与语速请用指令文本描述</span>
+      </div>
+    </div>
+
+    <!-- ③+ VoxCPM2 专属说明（2026-09-28 服务端恢复 engine=voxcpm）：
+         仅 ref_text（铁律，上方「样本参考文本」即其来源）；无数值参数；
+         契约未声明时长上限，长文案由宿主按句拆分拼接 -->
+    <div class="engine-params" v-else-if="ttsEngine === 'voxcpm'">
+      <div class="form-field">
+        <span class="form-hint">
+          VoxCPM2 克隆参数只有「样本参考文本」（ref_text，必填——上方文本框即其来源，
+          可选样本后自动填充或手填）。不支持 IndexTTS 的语速/情感数值参数，也不支持
+          QwenTTS 的预置音色/指令文本。合成时长契约无上限声明，长文案会按句拆分拼接。
+        </span>
       </div>
     </div>
 
