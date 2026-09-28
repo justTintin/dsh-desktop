@@ -11,6 +11,7 @@
  */
 import { readFileSync, readdirSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const root = process.cwd()
 const read = (p) => readFileSync(join(root, p), 'utf8')
@@ -82,9 +83,23 @@ if (readdirSync(join(root, 'packages/tintin-bundle/presets')).length >= 5) pass+
 else failures.push('3.6 五角色 preset — packages/tintin-bundle/presets 少于 5 个')
 const presetDir = 'packages/tintin-bundle/presets'
 const presetFiles = readdirSync(join(root, presetDir)).flatMap((r) => readdirSync(join(root, presetDir, r)).map((f) => join(presetDir, r, f)))
-const presetHits = presetFiles.reduce((n, f) => n + (read(f).match(/workflow-worker-thread/g) ?? []).length, 0)
-if (presetHits === 0) pass++
-else failures.push(`3.6c preset 源引用 0.1.7 已移除包（workflow-worker-thread）—— ${presetHits} 处`)
+// 行形匹配而非裸字符串：源文件注释里允许提及该包名（事故说明），只有插件行
+// 才是引用；真实裁决权在 3.6d 的整体解析。
+const presetRowHits = presetFiles.reduce((n, f) => n + (read(f).match(/^\s*- id: (?:tool-workflow|tool-ralph|workflow-worker-thread)\s*$/gm) ?? []).length, 0)
+if (presetRowHits === 0) pass++
+else failures.push(`3.6c preset 源引用 0.1.7 已移除包（workflow-worker-thread）—— ${presetRowHits} 处`)
+// 3.6d 直注册（2026-09-28 收口）：五预设由插件启动时直接注册进 agentPresets
+// 注册表，.agent-presets 同步链与 patch 转换退役。接线锚点之外必须真实解析
+// 五个源文件——字符串锚点查不出 duplicated mapping key 类残损（五源同损事故）。
+chkGE('3.6d', '直注册接线（inject+register+loader）', 'packages/tintin-bundle/index.js', 'agentPresets|loadPresetDefinitions', 3)
+try {
+  const { loadPresetDefinitions } = await import(pathToFileURL(join(root, 'packages/tintin-bundle/lib/preset-definitions.js')).href)
+  const defs = loadPresetDefinitions(join(root, 'packages/tintin-bundle/presets'))
+  if (defs.length === 5 && defs.every((d) => d.plugins.length === 18 && typeof d.order === 'number')) pass++
+  else failures.push(`3.6d 五预设真实解析——得到 ${defs.length} 个定义或行数/元数据异常`)
+} catch (error) {
+  failures.push(`3.6d 五预设真实解析失败——${String(error?.message ?? error).split('\n')[0]}`)
+}
 chkGE('3.14', '设置卡测试连接按钮（SRC pingServer 对齐）', 'packages/tintin-bundle/client.js', 'serverPing', 2)
 chkGE('3.7', 'ESM 纯度由 test/tintin-bundle-esm.test.ts 把关（提示）', 'test/tintin-bundle-esm.test.ts', 'module\\\\.exports', 1)
 chkGE('3.9', 'config:get/merge 自有存储通道', 'packages/tintin-bundle/index.js', "'config:(get|merge)'", 2)

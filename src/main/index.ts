@@ -98,7 +98,7 @@ import {
   resetPluginProfile
 } from './state/plugin-recovery'
 import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from './state/safe-mode-profile'
-import { migrateLegacyAgentPresets } from './state/legacy-preset-migration'
+import { migrateLegacyAgentPresets, retirePluginRegisteredPresets } from './state/legacy-preset-migration'
 import { WindowStateManager } from './state/window-state'
 import {
   isProjectedGenerationPlugin,
@@ -1059,7 +1059,11 @@ function createWindow(): BrowserWindow {
       nodeIntegration: false,
       preload: join(import.meta.dirname, '../preload/index.cjs'),
       sandbox: true,
-      webSecurity: true
+      webSecurity: true,
+      // 2026-09-28 用户裁决（形态复议）：内置浏览器嵌入 tab（webview），
+      // 推翻 0925「webviewTag 保持 false」的 spike 结论。准入由 browser-service
+      // 的 will-attach-webview 加固兜底（仅 persist:tintin-* 分区 + https）。
+      webviewTag: true
     }
   })
   if (process.platform === 'darwin') {
@@ -1546,6 +1550,8 @@ function launchHarness(): Promise<void> {
     // A broken Profile patch must not stop the launch chain: the Harness still
     // boots and surfaces its own structured diagnostic for the same file.
     try {
+      // 清退必须先于通用迁移：源目录先删，通用转换才不可能把 patch 行又长回来。
+      await retirePluginRegisteredPresets(dshHome, (line) => runtime.note(line))
       await migrateLegacyAgentPresets(dshHome, (line) => runtime.note(line))
     } catch (error) {
       runtime.note(

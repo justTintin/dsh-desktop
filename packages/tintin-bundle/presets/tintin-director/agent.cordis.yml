@@ -2,6 +2,10 @@
 # Base: @deepseek-ai/dsh-agent-presets/presets/standard/agent.cordis.yml
 # verbatim; ONLY the persona block differs (WP-5c: 工具沿用，人设按角色重写).
 # Rebuild after a harness upgrade refreshes the base — review the diff.
+# 2026-09-28 0.1.7 迁移：移除 workflow 族（tool-workflow/tool-ralph 行 +
+# isolate.workflowEngine 声明）——0.1.7 上游 workflow 子系统残缺
+# （dsh-workflow-worker-thread 未发布，引擎无法自建→preset 永远 waiting）；
+# 生成脚本暂不可用（基座包未发布 0.1.7 版本），本文件为迁移后的权威版本。
 
 # The `standard` agent preset: the full coding agent, mounted once per process.
 #
@@ -174,8 +178,6 @@
 - id: delegation
   name: cordis:group
   group: true
-  isolate:
-    workflowEngine: true
   config:
     - id: tool-subagent-control
       name: '@deepseek-ai/dsh-tool-subagent-control'
@@ -223,16 +225,6 @@
         toolName: subagent_claude_code
         backgroundMode: one-shot
         maxDepth: provider-managed
-
-
-    - id: tool-workflow
-      name: '@deepseek-ai/dsh-tool-workflow'
-
-    - id: tool-ralph
-      name: '@deepseek-ai/dsh-tool-ralph'
-      config:
-        subagentProvider: spawn
-        maxRounds: 64
 
 # ── remaining model-facing rows ─────────────────────────────────────────────
 

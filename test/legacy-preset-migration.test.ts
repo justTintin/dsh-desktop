@@ -1,11 +1,12 @@
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import jsYaml from 'js-yaml'
 import { applyEntryPatches, entryListSchema } from '@deepseek-ai/cordis-plugin-include'
-import { migrateLegacyAgentPresets } from '../src/main/state/legacy-preset-migration'
+import { migrateLegacyAgentPresets, retirePluginRegisteredPresets } from '../src/main/state/legacy-preset-migration'
 import { HarnessRuntime } from '../src/main/runtime/harness-runtime'
 import { resolveTestNodeExecutable } from './node-executable'
 
@@ -209,6 +210,94 @@ it('notes and keeps a broken Profile patch instead of throwing during repair', a
   await expect(migrateLegacyAgentPresets(home, (line) => notes.push(line))).resolves.toBeUndefined()
   expect(await readFile(patchPath, 'utf8')).toBe(broken)
   expect(notes.some((line) => line.includes('does not parse'))).toBe(true)
+})
+
+it('retires converted tintin presets so the bundle can register them directly', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'dsh-legacy-preset-'))
+  homes.push(home)
+  const sourceRoot = join(home, '.agent-presets')
+  const profile = join(home, 'profiles', 'web')
+  await mkdir(join(sourceRoot, 'tintin-assistant'), { recursive: true })
+  await mkdir(join(sourceRoot, 'custom'), { recursive: true })
+  await mkdir(profile, { recursive: true })
+  const composition = '- id: persona\n  name: "@deepseek-ai/dsh-persona"\n'
+  await writeFile(join(sourceRoot, 'tintin-assistant', 'agent.cordis.yml'), composition)
+  await writeFile(join(sourceRoot, 'custom', 'agent.cordis.yml'), composition)
+  const convertedEntry = (id: string): string => [
+    '- insert:',
+    `    - id: preset-${id}`,
+    `      name: '@deepseek-ai/dsh-agent-preset'`,
+    '      config:',
+    `        id: ${id}`,
+    '        plugins:',
+    '              - id: persona',
+    `                name: '@deepseek-ai/dsh-persona'`,
+    ''
+  ].join('\n')
+  const patchPath = join(profile, 'cordis.patch.yml')
+  await writeFile(patchPath, [
+    '- id: untouched',
+    '  disabled: true',
+    '',
+    '# dsh-desktop legacy presets begin',
+    convertedEntry('tintin-assistant'),
+    convertedEntry('custom').trimEnd(),
+    '# dsh-desktop legacy presets end',
+    ''
+  ].join('\n'))
+
+  const notes: string[] = []
+  await retirePluginRegisteredPresets(home, (line) => notes.push(line))
+  const patch = await readFile(patchPath, 'utf8')
+  expect(patch).not.toContain('preset-tintin-assistant')
+  expect(patch).toContain('preset-custom')
+  expect(patch).toContain('- id: untouched')
+  expect(patch).toContain('# dsh-desktop legacy presets begin')
+  expect(jsYaml.load(patch, { schema: entryListSchema })).toBeInstanceOf(Array)
+  expect(await readFile(join(sourceRoot, 'custom', 'agent.cordis.yml'), 'utf8')).toBe(composition)
+  expect(existsSync(join(sourceRoot, 'tintin-assistant'))).toBe(false)
+  expect(notes.some((line) => line.includes('retired 1 converted preset rows'))).toBe(true)
+
+  // Idempotent, and the generic conversion must not resurrect the rows: the
+  // sources are gone, so the roster is the plugin's to own from here on.
+  const after = patch
+  await retirePluginRegisteredPresets(home, (line) => notes.push(line))
+  expect(await readFile(patchPath, 'utf8')).toBe(after)
+  await migrateLegacyAgentPresets(home, (line) => notes.push(line))
+  expect(await readFile(patchPath, 'utf8')).toBe(after)
+})
+
+it('drops the whole generated block when every converted row was a tintin preset', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'dsh-legacy-preset-'))
+  homes.push(home)
+  const profile = join(home, 'profiles', 'web')
+  await mkdir(join(home, '.agent-presets', 'tintin-qc'), { recursive: true })
+  await mkdir(profile, { recursive: true })
+  await writeFile(join(home, '.agent-presets', 'tintin-qc', 'agent.cordis.yml'), '- id: persona\n  name: "@deepseek-ai/dsh-persona"\n')
+  const patchPath = join(profile, 'cordis.patch.yml')
+  await writeFile(patchPath, [
+    '- id: untouched',
+    '  disabled: true',
+    '',
+    '# dsh-desktop legacy presets begin',
+    '- insert:',
+    '    - id: preset-tintin-qc',
+    `      name: '@deepseek-ai/dsh-agent-preset'`,
+    '      config:',
+    '        id: tintin-qc',
+    '        plugins:',
+    '              - id: persona',
+    `                name: '@deepseek-ai/dsh-persona'`,
+    '# dsh-desktop legacy presets end',
+    ''
+  ].join('\n'))
+
+  await retirePluginRegisteredPresets(home, () => {})
+  const patch = await readFile(patchPath, 'utf8')
+  expect(patch).not.toContain('legacy presets begin')
+  expect(patch).not.toContain('preset-tintin-qc')
+  expect(patch).toContain('- id: untouched')
+  expect(jsYaml.load(patch, { schema: entryListSchema })).toBeInstanceOf(Array)
 })
 
 it('publishes a migrated custom preset through the real Harness web registry', async () => {

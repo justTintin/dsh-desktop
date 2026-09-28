@@ -31,6 +31,7 @@ import { loopbackCall, readLoopbackConfig, summarizeExtract } from './lib/loopba
 import { createTintinAgentTools } from './lib/agent-tools.js'
 import { createContextTaskApi, defaultWorkspaceDir } from './lib/context-task.js'
 import { createYtdlpApi } from './lib/ytdlp.js'
+import { loadPresetDefinitions } from './lib/preset-definitions.js'
 
 const PING_PATH = '/tintin/ping'
 const PROBE_FILE_PATH = '/tintin/probe/file'
@@ -277,35 +278,26 @@ export async function apply(ctx, config) {
     return undefined
   }, 'tintin-bundle: settings.yaml.imported recovery')
 
-  // WP-5c: sync the bundled role presets into $DSH_HOME/.agent-presets/ —
-  // the preset roster's user root, auto-scanned by dsh-agent-presets. Our
-  // tintin-* directories are ours to own: refreshed on every boot so package
-  // updates land (a user copy under another id stays untouched). The default
-  // preset is switched via the composition (cordis.patch.yml), not here.
-  ctx.effect(() => {
-    const home = process.env.DSH_HOME
-    if (!home) return undefined
-    const srcRoot = new URL('./presets/', import.meta.url)
-    const srcDir = fileURLToPath(srcRoot)
-    const destRoot = join(home, '.agent-presets')
-    if (!existsSync(srcDir)) return undefined
+  // WP-5c（2026-09-28 改版）：角色预设在插件激活时直接注册进宿主 agentPresets
+  // 注册表——不再复制 .agent-presets、不再转换进 Profile patch。旧的运行时状
+  // 态副本会过期（existingIds 永不重转换）、会残损（一次重复键曾把客户端逼进
+  // 安全模式）。注册失败单预设隔离：清单页可见，不阻断插件。存量 patch 行与
+  // 源目录由壳侧 retirePluginRegisteredPresets 在同一次启动内先行清退。
+  ctx.inject(['agentPresets'], (agentPresets) => {
+    let definitions
     try {
-      mkdirSync(destRoot, { recursive: true })
-      let synced = 0
-      for (const id of readdirSync(srcDir)) {
-        const src = join(srcDir, id)
-        if (!statSync(src).isDirectory()) continue
-        const dest = join(destRoot, id)
-        mkdirSync(dest, { recursive: true })
-        for (const f of readdirSync(src)) copyFileSync(join(src, f), join(dest, f))
-        synced++
-      }
-      if (synced > 0) ctx.logger.info('tintin-bundle: synced %d role presets to .agent-presets', synced)
+      definitions = loadPresetDefinitions(fileURLToPath(new URL('./presets/', import.meta.url)))
     } catch (error) {
-      ctx.logger.warn('tintin-bundle: preset sync failed: %s', error?.message ?? error)
+      ctx.logger.warn('tintin-bundle: role preset load failed: %s', error?.message ?? error)
+      return undefined
+    }
+    for (const definition of definitions) {
+      agentPresets.register(definition).catch((error) => {
+        ctx.logger.warn('tintin-bundle: preset %s registration failed: %s', definition.id, error?.message ?? error)
+      })
     }
     return undefined
-  }, 'tintin-bundle: role preset sync')
+  }, 'tintin-bundle: role preset registration')
 
   const aiConfigPath = process.env.TINTIN_AI_CONFIG || null
   const readAiConfig = aiConfigPath

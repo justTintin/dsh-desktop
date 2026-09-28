@@ -1,4 +1,5 @@
 import { constants } from 'node:fs'
+import type { Dirent } from 'node:fs'
 import { cp, copyFile, mkdir, readFile, readdir, rename, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { isSeq, parse, parseDocument } from 'yaml'
@@ -90,6 +91,96 @@ async function backupProfilePatch(profilePatch: string, previous: string): Promi
     await copyFile(profilePatch, `${profilePatch}.pre-0.1.7-backup`, constants.COPYFILE_EXCL)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+  }
+}
+
+const TINTIN_PRESET_ID = /^    - id: preset-(tintin-[a-z0-9-]+)\s*$/u
+
+/** Remove whole `- insert:` entries that declare a tintin-* preset id from the generated section. */
+export function stripTintinPresetEntries(section: string): { next: string; removed: string[] } {
+  const lines = section.split('\n')
+  const kept: string[] = []
+  const removed: string[] = []
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i]!
+    if (line === '- insert:') {
+      let j = i + 1
+      let id: string | undefined
+      while (j < lines.length && !lines[j]!.startsWith('- ')) {
+        const match = TINTIN_PRESET_ID.exec(lines[j]!)
+        if (match) id = match[1]
+        j += 1
+      }
+      if (id) {
+        removed.push(id)
+        i = j - 1
+        continue
+      }
+    }
+    kept.push(line)
+  }
+  return { next: kept.join('\n'), removed }
+}
+
+/**
+ * Hand the tintin-* role presets over to tintin-bundle's direct agentPresets
+ * registration. Their converted patch rows and .agent-presets copies are
+ * package-owned runtime state this Profile no longer reads: the registry
+ * rejects a duplicate id, so the patch rows must go before the plugin
+ * registers — and the sources must go so the generic conversion can never
+ * re-add rows behind the plugin's back. Sources go first; a failed patch strip
+ * degrades to stale-but-working patch rows instead of a broken roster.
+ */
+export async function retirePluginRegisteredPresets(dshHome: string, note: (line: string) => void): Promise<void> {
+  const sourceRoot = join(dshHome, '.agent-presets')
+  let removedSources = 0
+  let entries: Dirent[]
+  try {
+    entries = await readdir(sourceRoot, { withFileTypes: true })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') entries = []
+    else throw error
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !entry.name.startsWith('tintin-')) continue
+    await rm(join(sourceRoot, entry.name), { recursive: true, force: true })
+    removedSources += 1
+  }
+
+  const profilePatch = join(dshHome, 'profiles', 'web', 'cordis.patch.yml')
+  const previous = await readFile(profilePatch, 'utf8').catch((error: unknown) => {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return ''
+    throw error
+  })
+  const start = previous.indexOf(START)
+  const end = previous.indexOf(END)
+  if ((start === -1) !== (end === -1) || (start !== -1 && end < start)) {
+    throw new Error('legacy preset section in the web Profile patch is incomplete')
+  }
+  let removedRows: string[] = []
+  if (start !== -1) {
+    const section = previous.slice(start + START.length, end)
+    const stripped = stripTintinPresetEntries(section)
+    removedRows = stripped.removed
+    if (stripped.removed.length > 0) {
+      const next = stripped.next.trim() === ''
+        ? previous.slice(0, start) + previous.slice(end + END.length).replace(/^\r?\n/u, '')
+        : previous.slice(0, start + START.length) + stripped.next + previous.slice(end)
+      if (next !== previous) {
+        const document = parseDocument(next)
+        if (document.errors.length || !isSeq(document.contents)) {
+          note('[desktop] plugin-registered preset rows could not be retired because the surrounding Profile patch does not parse; leaving it for manual recovery')
+          return
+        }
+        await backupProfilePatch(profilePatch, previous)
+        await writeTextAtomically(profilePatch, next)
+      }
+    }
+  }
+  if (removedRows.length > 0) {
+    note(`[desktop] retired ${removedRows.length} converted preset rows (${removedSources} source directories removed); role presets now register from the tintin-bundle package`)
+  } else if (removedSources > 0) {
+    note(`[desktop] removed ${removedSources} synced role preset source directories; role presets now register from the tintin-bundle package`)
   }
 }
 
