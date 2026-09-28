@@ -80,6 +80,8 @@ chkGE('3.5', 'agent 工具避开保留键 workflow_type', 'packages/tintin-bundl
 chkGE('3.5b', '嵌套 schema 显式 additionalProperties（0.1.7 编译器）', 'packages/tintin-bundle/lib/agent-tools.js', "additionalProperties: true", 3)
 if (readdirSync(join(root, 'packages/tintin-bundle/presets')).length >= 5) pass++
 else failures.push('3.6 五角色 preset — packages/tintin-bundle/presets 少于 5 个')
+chkZero('3.6c', 'preset 源引用 0.1.7 已移除包（workflow-worker-thread——加载失败事故锚点）', 'packages/tintin-bundle/presets', 'workflow-worker-thread')
+chkGE('3.14', '设置卡测试连接按钮（SRC pingServer 对齐）', 'packages/tintin-bundle/client.js', 'serverPing', 2)
 chkGE('3.7', 'ESM 纯度由 test/tintin-bundle-esm.test.ts 把关（提示）', 'test/tintin-bundle-esm.test.ts', 'module\\\\.exports', 1)
 chkGE('3.9', 'config:get/merge 自有存储通道', 'packages/tintin-bundle/index.js', "'config:(get|merge)'", 2)
 chkGE('3.9b', '自有存储模块接线', 'packages/tintin-bundle/index.js', 'tintin-config-store', 1)

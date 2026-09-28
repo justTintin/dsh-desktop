@@ -1126,6 +1126,19 @@ window.__ModuleLoader__.load({
           .then(() => setState('saved'))
           .catch((e) => { setError(String(e?.message ?? e)); setState('error') })
       }
+      // 测试连接（对齐 SRC useSettingsGeneral.pingServer）：env:serverPing 回显
+      // 当前生效地址 + 在线状态 + 延迟；成功后回填输入框为解析链实际地址。
+      const [pingState, setPingState] = React.useState('idle') // idle|pinging|done
+      const [pingText, setPingText] = React.useState('')
+      const pingOk = pingText.includes('运行中')
+      const testConnection = () => {
+        setPingState('pinging'); setPingText('')
+        window.tintin?.env?.serverPing?.().then((r) => {
+          if (r?.url && typeof r.url === 'string') setUrl(r.url)
+          setPingText(r?.online ? `${r.url} · 运行中（${r.latencyMs}ms）` : `${r?.url || ''} · 离线`)
+          setPingState('done')
+        }).catch(() => { setPingText('检测失败'); setPingState('done') })
+      }
       return h('div', { style: { padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px' } },
         h('div', { style: { fontSize: '15px', fontWeight: 600 } }, 'TinTin 服务器'),
         h('div', { style: { display: 'flex', gap: '8px' } },
@@ -1147,7 +1160,18 @@ window.__ModuleLoader__.load({
               background: 'var(--dsw-alias-label-primary, #4f7cff)', color: 'var(--dsw-alias-bg-layer-3, #fff)',
             },
           }, state === 'saving' ? '保存中…' : '保存'),
+          h('button', {
+            type: 'button', onClick: testConnection, disabled: pingState === 'pinging',
+            style: {
+              appearance: 'none', font: 'inherit', padding: '0 16px', height: '34px', cursor: 'pointer',
+              border: '0.5px solid var(--dsw-alias-border-l4, #555)', borderRadius: '8px',
+              background: 'transparent', color: 'inherit',
+            },
+          }, pingState === 'pinging' ? '检测中…' : '测试连接'),
         ),
+        pingState === 'done' && pingText && h('span', {
+          style: { fontSize: '12px', color: pingOk ? '#4ade80' : '#f87171' },
+        }, pingText),
         state === 'saved' && h('span', { style: { fontSize: '12px', color: '#4ade80' } }, '已保存'),
         state === 'error' && h('span', { style: { fontSize: '12px', color: '#f87171' } }, `保存失败：${error}`),
         h('span', { style: { fontSize: '12px', color: 'var(--dsw-alias-label-tertiary, #888)' } },
