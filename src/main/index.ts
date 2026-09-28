@@ -1060,10 +1060,9 @@ function createWindow(): BrowserWindow {
       preload: join(import.meta.dirname, '../preload/index.cjs'),
       sandbox: true,
       webSecurity: true,
-      // 2026-09-28 用户裁决（形态复议）：内置浏览器嵌入 tab（webview），
-      // 推翻 0925「webviewTag 保持 false」的 spike 结论。准入由 browser-service
-      // 的 will-attach-webview 加固兜底（仅 persist:tintin-* 分区 + https）。
-      webviewTag: true
+      // 2026-09-28 晚（用户裁决）：浏览器整体按原客户端形态在独立窗口实现，
+      // 主窗口不承载 webview——webviewTag 维持上游 false 口径。
+      webviewTag: false
     }
   })
   if (process.platform === 'darwin') {

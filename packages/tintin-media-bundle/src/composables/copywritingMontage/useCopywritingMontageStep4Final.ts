@@ -1025,6 +1025,15 @@ async function exportAllToJianyingDraft(): Promise<void> {
     exportProgress.value = 85
     // 镜级 AI 音效（2026-09-22 用户裁决「音效包装对齐导出」）：按片段所属分镜挂显式
     // 音效段（sfxClips 已在虚拟时间轴展平时构建，见上方循环）
+    // 2026-09-28 [object Object] 事故防回归：口播/音效路径必须是绝对路径，
+    // 坏路径直接终止导出并指认（不再生成剪映缺媒体草稿）
+    const badMedia = [...voiceClips.flat(), ...sfxClips.flat()]
+      .filter((c) => c.path && !/^[A-Za-z]:[\\/]/.test(c.path))
+    if (badMedia.length) {
+      exportStage.value = '导出终止'
+      notify('导出终止', '检测到异常媒体路径（' + badMedia[0].path.slice(0, 60) + '…，共 ' + badMedia.length + ' 条）。请重新生成口播/音效后重试；反复出现请重启应用。')
+      return
+    }
     const ok = await doJianyingExport({
       mode: 'multi',
       videoPaths: cands,

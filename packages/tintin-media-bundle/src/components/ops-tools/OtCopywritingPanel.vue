@@ -46,10 +46,13 @@ watch(
   { immediate: true },
 )
 
-/** 携带文案→分镜卡（goToStoryboard 写入 pendingStoryboard 信号；分镜卡 P2 消费） */
+/** 携带文案→分镜卡（goToStoryboard 写入 pendingStoryboard 信号；分镜卡 P2 消费）。
+ *  2026-09-27 打通跳转：写入后经顶部 Tab 切到「媒体工具」并打开分镜脚本创作卡
+ *  （App.vue 侦听信号自动开卡；tab 切换沿用 chrome 的 DOM 点击口径）。 */
 function goStoryboard(): void {
   if (!C.goToStoryboard()) return
-  C.status.value = '文案已暂存——打开「媒体工具 → 分镜脚本创作」即可继续（草案已自动带入）。'
+  document.querySelector<HTMLElement>('#tintin-top-tabs button[data-view="media"]')?.click()
+  C.status.value = '已切换到「媒体工具 → 分镜脚本创作」，文案自动带入。'
 }
 </script>
 

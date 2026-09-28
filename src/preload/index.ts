@@ -183,6 +183,23 @@ contextBridge.exposeInMainWorld('dshDesktopSaveFilePicker', {
 // loginStatus = 各平台分区 cookie 条数（只读）；exportCookies = 分区 cookies
 // 写 Netscape 文件到 <userData>/harness/tintin/browser/cookies/（参考视频下载
 // yt-dlp 的登录态交接目录）。
+// 2026-09-28 (TinTin port): 浏览器整体按原客户端实现（用户裁决，废弃 tab 内嵌）——
+// 浏览器窗口加载本地页面 build/tintin-browser.html，页面经 tintinBrowserPage 通道
+// 做原生视图 bounds 同步/导航动作/开平台；导航态由主进程单向推送。
+contextBridge.exposeInMainWorld('tintinBrowserPage', {
+  bounds: (rect: { x: number; y: number; width: number; height: number }): void => {
+    ipcRenderer.send('tintin-browser-page:bounds', rect)
+  },
+  open: (payload: { platform: string }): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('tintin-browser-page:open', payload),
+  action: (payload: { type: string; url?: string }): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('tintin-browser-page:action', payload),
+  onState: (cb: (s: { url?: string; canBack?: boolean; canFwd?: boolean; loading?: boolean; platform?: string | null }) => void): (() => void) => {
+    const listener = (_e: unknown, s: { url?: string; canBack?: boolean; canFwd?: boolean; loading?: boolean; platform?: string | null }): void => cb(s)
+    ipcRenderer.on('tintin-browser-page:state', listener)
+    return () => { ipcRenderer.removeListener('tintin-browser-page:state', listener) }
+  },
+})
 contextBridge.exposeInMainWorld('dshDesktopBrowser', {
   platforms: (): Promise<Array<{ id: string; name: string; seedUrl: string }>> =>
     ipcRenderer.invoke('browser:platforms'),

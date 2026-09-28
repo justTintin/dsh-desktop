@@ -19,8 +19,9 @@ export function readLoopbackConfig() {
   }
 }
 
-/** 回环调用（POST JSON + token 头）；服务缺失 → 结构化 NO_SERVICE（永不抛） */
-export function loopbackCall(path, body = {}) {
+/** 回环调用（POST JSON + token 头）；服务缺失 → 结构化 NO_SERVICE（永不抛）。
+ *  timeoutMs：慢通道（热点采集/抽取）默认 180s；登录态同步等快通道传短超时（3s 级）。 */
+export function loopbackCall(path, body = {}, timeoutMs = 180000) {
   const cfg = readLoopbackConfig()
   if (!cfg) {
     return Promise.resolve({ ok: false, error: { type: 'NO_SERVICE', message: '浏览器引擎回环服务未就绪（需先启动桌面应用）' } })
@@ -37,7 +38,7 @@ export function loopbackCall(path, body = {}) {
         'content-length': Buffer.byteLength(payload),
         'x-tintin-loopback-token': cfg.token,
       },
-      timeout: 180000, // 热点采集 ~20s；页面抽取可能更久
+      timeout: timeoutMs,
     }, (res) => {
       const chunks = []
       res.on('data', (c) => chunks.push(c))

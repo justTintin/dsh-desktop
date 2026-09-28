@@ -12,15 +12,18 @@ export interface YtdlpDeps {
   cacheDir: () => string
   log?: (...a: unknown[]) => void
   warn?: (...a: unknown[]) => void
+  /** 壳层回环调用（默认 lib/loopback-helpers.js loopbackCall；单测注入桩） */
+  loopback?: (path: string, body?: Record<string, unknown>, timeoutMs?: number) => Promise<unknown>
 }
 
 export function createYtdlpApi(deps: YtdlpDeps): {
   'ytdlp:status': () => { available: boolean; path: string; external: boolean }
   'ytdlp:probe': (args: Array<{ url?: unknown; proxy?: unknown }>) =>
-    Promise<{ probe?: unknown; options?: unknown[]; error?: string; code?: string; stderrTail?: string }>
+    Promise<{ probe?: unknown; options?: unknown[]; error?: string; code?: string; stderrTail?: string; loginCounts?: Record<string, number> | null }>
   'ytdlp:download': (args: Array<{ url?: unknown; option?: unknown; proxy?: unknown }>) =>
     Promise<{ path?: string; fileName?: string; normalized?: boolean; meta?: unknown; error?: string; code?: string; stderrTail?: string }>
   'ytdlp:saveAs': (args: Array<{ src?: unknown; dst?: unknown }>) => { ok?: boolean; error?: string }
+  'ytdlp:openLoginBrowser': (args: Array<{ platform?: unknown }>) => Promise<{ ok?: boolean; error?: { type?: string; message?: string } }>
 }
 
 /** safeOutputPath：realpath 校验输出不逃逸工作目录 */

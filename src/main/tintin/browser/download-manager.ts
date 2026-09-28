@@ -5,7 +5,7 @@
 import { createWriteStream, existsSync, mkdirSync, statSync, unlinkSync } from 'node:fs'
 import http from 'node:http'
 import https from 'node:https'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { URL } from 'node:url'
 import type { DownloadItem, WebContents } from 'electron'
 
@@ -51,8 +51,9 @@ export function createDownloadManager(deps: DownloadManagerDeps) {
     emit('downloads:done', { taskId, ...result })
     downloadTasks.delete(taskId)
   }
-  function broadcastError(taskId: string, error: Error): void {
-    emit('downloads:error', { taskId, error: error.message })
+  /** file 为附加字段（2026-09-28 浏览器窗口下载栏显示文件名用；SRC 契约字段不变） */
+  function broadcastError(taskId: string, error: Error, file = ''): void {
+    emit('downloads:error', file ? { taskId, error: error.message, file } : { taskId, error: error.message })
     downloadTasks.delete(taskId)
   }
 
@@ -79,22 +80,22 @@ export function createDownloadManager(deps: DownloadManagerDeps) {
     let lastPercent = 0
     item.on('updated', (_e, state) => {
       if (state === 'interrupted') {
-        broadcastProgress(taskId, { state: 'paused', percent: lastPercent })
+        broadcastProgress(taskId, { state: 'paused', percent: lastPercent, file: item.getFilename() })
       } else if (state === 'progressing') {
         const received = item.getReceivedBytes()
         const total = item.getTotalBytes()
         const percent = total > 0 ? Math.round((received / total) * 100) : 0
         const speed = calculateSpeed(taskId, received)
         lastPercent = percent
-        broadcastProgress(taskId, { state: 'downloading', percent, speed, downloaded: received, total })
+        broadcastProgress(taskId, { state: 'downloading', percent, speed, downloaded: received, total, file: item.getFilename() })
       }
     })
     item.once('done', (_e, state) => {
       if (state === 'completed') {
         const stat = statSync(savePath)
-        broadcastDone(taskId, { finalPath: savePath, size: stat.size })
+        broadcastDone(taskId, { finalPath: savePath, size: stat.size, file: item.getFilename() })
       } else {
-        broadcastError(taskId, new Error(`Download ${state}`))
+        broadcastError(taskId, new Error(`Download ${state}`), item.getFilename())
       }
     })
     downloadTasks.set(taskId, { type: 'native', item, savePath })
@@ -137,6 +138,7 @@ export function createDownloadManager(deps: DownloadManagerDeps) {
           let receivedBytes = 0
           const startTime = Date.now()
           let lastSpeedUpdate = 0
+          const urlFileName = basename(savePath)
 
           downloadTasks.set(taskId, { type: 'url', req, fileStream, savePath, receivedBytes, totalBytes, startTime })
 
@@ -148,7 +150,7 @@ export function createDownloadManager(deps: DownloadManagerDeps) {
             const speed = elapsed > 0 ? Math.round(receivedBytes / elapsed) : 0
             const now = Date.now()
             if (now - lastSpeedUpdate > 500 || percent === 100) {
-              broadcastProgress(taskId, { state: 'downloading', percent, speed, downloaded: receivedBytes, total: totalBytes })
+              broadcastProgress(taskId, { state: 'downloading', percent, speed, downloaded: receivedBytes, total: totalBytes, file: urlFileName })
               lastSpeedUpdate = now
             }
             const task = downloadTasks.get(taskId)
@@ -157,13 +159,13 @@ export function createDownloadManager(deps: DownloadManagerDeps) {
           res.on('end', () => {
             fileStream.end(() => {
               const stat = statSync(savePath)
-              broadcastDone(taskId, { finalPath: savePath, size: stat.size })
+              broadcastDone(taskId, { finalPath: savePath, size: stat.size, file: urlFileName })
             })
           })
           res.on('error', (err) => {
             fileStream.close()
             try { unlinkSync(savePath) } catch { /* ignore */ }
-            broadcastError(taskId, err)
+            broadcastError(taskId, err, urlFileName)
           })
           return
         }

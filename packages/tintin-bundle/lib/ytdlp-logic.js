@@ -235,7 +235,9 @@ function classifyDownloadError(stderr) {
 const DOWNLOAD_ERROR_TEXT = {
   unsupported_source: '当前仅支持 YouTube 和 Bilibili 公公开视频',
   download_probe_stale: '链接已变化，请重新解析后再下载',
-  login_required: '该视频需要登录后访问，当前无法下载',
+  // login_required 文案为有意偏离 SRC（2026-09-28 用户裁决）：死路文案换成可操作指引
+  // （配合 ytdlp:openLoginBrowser 一键打开内置浏览器；登录态已在 probe/download 前自动同步）
+  login_required: '该视频需要登录后访问：请先在 TinTin 浏览器登录对应平台，再重新解析（登录态自动同步，无需手动导出）',
   region_or_copyright_restricted: '该视频受地区或版权限制，当前无法下载',
   disk_full: '磁盘空间不足，无法保存下载文件',
   download_playback_conversion_failed: '视频兼容格式转换失败，请重新下载或选择其他清晰度',

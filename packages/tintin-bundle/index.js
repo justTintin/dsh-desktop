@@ -378,7 +378,11 @@ export async function apply(ctx, config) {
   // 缓存目录解析（env:cacheDir 与 ytdlp 门共用）：设置 local.cacheDir（通用设置
   // 卡「更改」写入）> 默认本机工作区目录 Documents/tintin-workspace。
   const resolveCacheDir = () => {
-    const configured = String(config?.local?.cacheDir || '').trim()
+    // 2026-09-29 [object Object] 终局修复：schemastery volatile 占位符会把
+    // local.cacheDir 物化成空对象（3.9c 同族锚点，String 化即 [object Object]，
+    // 空对象为真值还会压过工作区回退）——只接受字符串值，其余一律视为未配置
+    const raw = config?.local?.cacheDir
+    const configured = typeof raw === 'string' ? raw.trim() : ''
     return configured
       || process.env.TINTIN_WORKSPACE_DIR
       || join(process.env.USERPROFILE || process.env.HOME || '.', 'Documents', 'tintin-workspace')

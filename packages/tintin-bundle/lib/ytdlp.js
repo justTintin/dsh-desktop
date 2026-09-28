@@ -7,12 +7,15 @@
 //    分区 cookies 导出为 Netscape 文件（src/main/tintin/browser/ 引擎，交接目录
 //    `<DSH_HOME>/tintin/browser/cookies/cookies_<platform>.txt`），本门只读该目录
 //    前置 --cookies（有文件才带，静默跳过不阻塞——SRC 同口径）。
+//    2026-09-28 用户裁决追加：probe/download 前经回环服务主动同步一次（免手动
+//    导出）；并新增 ytdlp:openLoginBrowser 通道供未登录引导一键拉起内置浏览器。
 // 2. 进度事件：SRC 经 event.sender.send('ytdlp:progress') 推送；宿主桥无事件通道
 //    （同 montage:split 口径），下载阻塞到终态返回，渲染层按 busy 态呈现。
 import { spawn } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readdirSync, realpathSync, statSync, unlinkSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import * as logic from './ytdlp-logic.js'
+import { loopbackCall } from './loopback-helpers.js'
 
 /** 执行 yt-dlp 收集完整输出（probe 用，一次性 JSON；SRC runYtDlpCollect 同口径） */
 function runCollect(binPath, args, timeoutMs = 120000) {
@@ -42,7 +45,24 @@ export function safeOutputPath(workDir, filePath) {
   return resolved
 }
 
-export function createYtdlpApi({ ytdlpPath, ffmpegPath, ffprobePath, ffmpegDir, cookiesDir, cacheDir, log = () => {}, warn = () => {} }) {
+export function createYtdlpApi({ ytdlpPath, ffmpegPath, ffprobePath, ffmpegDir, cookiesDir, cacheDir, log = () => {}, warn = () => {}, loopback = loopbackCall }) {
+  /** 登录态自动同步（2026-09-28 用户裁决：解析/下载前从壳层回环导出一次分区 cookies，
+   *  免去"登录后手动导出"步骤；回环不可达/超时静默跳过——沿用目录里已有文件，退化为旧口径） */
+  async function syncLoginCookies() {
+    try {
+      const res = await loopback('/tintin-browser/cookies/export', {}, 3000)
+      if (res && !res.error) log('ytdlp', `cookies synced: ${JSON.stringify(res)}`)
+    } catch { /* 回环异常不阻塞解析/下载 */ }
+  }
+
+  /** 各平台登录态条数（回环只读；失败返回 null——login_required 时供渲染层判别未登录/已登录仍被拒） */
+  async function loginCountsSafe() {
+    try {
+      const res = await loopback('/tintin-browser/login/status', {}, 3000)
+      return res && res.counts ? res.counts : null
+    } catch { return null }
+  }
+
   /** 浏览器登录态 cookies（壳层已导出的 Netscape 文件；平台无文件=未登录，不带） */
   function withBrowserCookies(args, url) {
     try {
@@ -103,11 +123,15 @@ export function createYtdlpApi({ ytdlpPath, ffmpegPath, ffprobePath, ffmpegDir, 
         return { error: logic.downloadErrorText('unsupported_source') }
       }
       try {
+        await syncLoginCookies()
         const finalArgs = withBrowserCookies(logic.buildProbeArgs(url, String(payload?.proxy || '')), url)
         const { code, stdout, stderr } = await runCollect(ytdlpPath, finalArgs)
         if (code !== 0 || !stdout.trim()) {
           const cls = logic.classifyDownloadError(stderr)
-          return { error: logic.downloadErrorText(cls.code), code: cls.code, stderrTail: cls.stderrTail }
+          const out = { error: logic.downloadErrorText(cls.code), code: cls.code, stderrTail: cls.stderrTail }
+          // login_required 附带登录态条数：渲染层据此区分「未登录」与「已登录仍被平台拒」
+          if (cls.code === 'login_required') out.loginCounts = await loginCountsSafe()
+          return out
         }
         // stdout 可能混入 --print 的附加行：取第一个 { 起的 JSON 主体
         const jsonStart = stdout.indexOf('{')
@@ -134,6 +158,7 @@ export function createYtdlpApi({ ytdlpPath, ffmpegPath, ffprobePath, ffmpegDir, 
       const buildArgs = option.mediaType === 'audio'
         ? logic.buildAudioDownloadArgs({ url, formatId: option.audioFormatId, kbps: option.kbps || 192, outTemplate: logic.outTemplateFor(jobDir), ffmpegDir: ffmpegDir || '', proxy: String(payload?.proxy || '') })
         : logic.buildVideoDownloadArgs({ url, formatId: option.videoFormatId, audioFormatId: option.audioFormatId, outTemplate: logic.outTemplateFor(jobDir), ffmpegDir: ffmpegDir || '', proxy: String(payload?.proxy || '') })
+      await syncLoginCookies()
       const finalArgs = withBrowserCookies(buildArgs, url)
 
       const downloaded = await new Promise((resolve) => {
@@ -220,6 +245,13 @@ export function createYtdlpApi({ ytdlpPath, ffmpegPath, ffprobePath, ffmpegDir, 
       } catch (err) {
         return { error: `保存失败：${err instanceof Error ? err.message : err}` }
       }
+    },
+
+    // 打开内置浏览器登录（2026-09-28 用户裁决：login_required 提示一键跳登录，
+    // 经壳层回环 /tintin-browser/open 拉起独立浏览器窗口；平台合法性由壳侧校验）
+    'ytdlp:openLoginBrowser': (args) => {
+      const platform = String(args?.[0]?.platform || 'youtube')
+      return loopback('/tintin-browser/open', { platform }, 5000)
     },
   }
 }

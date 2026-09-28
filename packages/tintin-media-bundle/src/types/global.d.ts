@@ -980,9 +980,11 @@ declare interface TintinYtdlpProbe {
 }
 declare interface TintinBridgeYtdlp {
   status(): Promise<{ available: boolean; path: string; external: boolean }>
-  probe(payload: { url: string; proxy?: string }): Promise<{ probe?: TintinYtdlpProbe; options?: TintinYtdlpOption[]; error?: string; code?: string }>
+  probe(payload: { url: string; proxy?: string }): Promise<{ probe?: TintinYtdlpProbe; options?: TintinYtdlpOption[]; error?: string; code?: string; loginCounts?: Record<string, number> | null }>
   download(payload: { url: string; option: TintinYtdlpOption; proxy?: string }): Promise<{ path?: string; fileName?: string; normalized?: boolean; meta?: { width?: number; height?: number; duration?: number } | null; error?: string; code?: string }>
   saveAs(payload: { src: string; dst: string }): Promise<{ ok?: boolean; error?: string }>
+  /** 未登录引导：经壳层回环打开对应平台的内置浏览器窗口（2026-09-28 用户裁决） */
+  openLoginBrowser(payload: { platform: string }): Promise<{ ok?: boolean; error?: { type?: string; message?: string } }>
   /** 下载进度事件，返回取消函数 */
   onProgress(cb: (p: { phase: string; pct: number }) => void): () => void
 }

@@ -84,13 +84,14 @@ describe('ytdlp logic (SRC ytdlp-logic 1:1)', () => {
   it('classifies errors and renders the source chinese texts', () => {
     expect(classifyDownloadError('Sign in to confirm you are not a bot').code).toBe('login_required')
     expect(classifyDownloadError('connection refused').code).toBe('network_unavailable')
-    expect(downloadErrorText('login_required')).toBe('该视频需要登录后访问，当前无法下载')
+    // login_required 文案为有意偏离 SRC（2026-09-28 用户裁决）：换成可操作指引
+    expect(downloadErrorText('login_required')).toBe('该视频需要登录后访问：请先在 TinTin 浏览器登录对应平台，再重新解析（登录态自动同步，无需手动导出）')
     expect(downloadErrorText('unsupported_source')).toBe('当前仅支持 YouTube 和 Bilibili 公公开视频')
   })
 })
 
 describe('ytdlp host gate (SRC ytdlp-gate port)', () => {
-  function makeApi(cookiePlatform: string | null) {
+  function makeApi(cookiePlatform: string | null, loopback?: (path: string, body?: Record<string, unknown>, timeoutMs?: number) => Promise<unknown>) {
     const dir = mkdtempSync(join(tmpdir(), 'tintin-ytdlp-'))
     tmpDirs.push(dir)
     if (cookiePlatform) {
@@ -103,13 +104,32 @@ describe('ytdlp host gate (SRC ytdlp-gate port)', () => {
       ffmpegDir: '',
       cookiesDir: () => dir,
       cacheDir: () => dir,
+      ...(loopback ? { loopback } : {}),
     })
     return { api, dir }
   }
 
-  it('registers exactly the status/probe/download/saveAs channels', () => {
+  it('registers exactly the status/probe/download/saveAs/openLoginBrowser channels', () => {
     const { api } = makeApi(null)
-    expect(Object.keys(api).sort()).toEqual(['ytdlp:download', 'ytdlp:probe', 'ytdlp:saveAs', 'ytdlp:status'])
+    expect(Object.keys(api).sort()).toEqual(['ytdlp:download', 'ytdlp:openLoginBrowser', 'ytdlp:probe', 'ytdlp:saveAs', 'ytdlp:status'])
+  })
+
+  it('openLoginBrowser forwards the platform over the loopback open route', async () => {
+    const calls: Array<{ path: string; body: Record<string, unknown>; timeoutMs?: number }> = []
+    const { api } = makeApi(null, async (path, body = {}, timeoutMs) => {
+      calls.push({ path, body, timeoutMs })
+      return { ok: true }
+    })
+    const out = await (api['ytdlp:openLoginBrowser'] as Entry)([{ platform: 'youtube' }]) as { ok?: boolean }
+    expect(out.ok).toBe(true)
+    expect(calls).toEqual([{ path: '/tintin-browser/open', body: { platform: 'youtube' }, timeoutMs: 5000 }])
+  })
+
+  it('openLoginBrowser defaults to youtube and surfaces loopback NO_SERVICE shape', async () => {
+    const { api } = makeApi(null, async () => ({ ok: false, error: { type: 'NO_SERVICE', message: 'x' } }))
+    const out = await (api['ytdlp:openLoginBrowser'] as Entry)([{}]) as { ok?: boolean; error?: { type?: string } }
+    expect(out.ok).toBe(false)
+    expect(out.error?.type).toBe('NO_SERVICE')
   })
 
   it('status reports unavailable for a bare PATH binary', () => {
@@ -117,10 +137,12 @@ describe('ytdlp host gate (SRC ytdlp-gate port)', () => {
     expect(api['ytdlp:status']()).toEqual({ available: false, path: 'yt-dlp', external: false })
   })
 
-  it('probe rejects non-whitelisted urls before spawning', async () => {
-    const { api } = makeApi(null)
+  it('probe rejects non-whitelisted urls before spawning (and without touching the loopback)', async () => {
+    const calls: string[] = []
+    const { api } = makeApi(null, async (path) => { calls.push(path); return {} })
     const out = await (api['ytdlp:probe'] as Entry)([{ url: 'https://www.douyin.com/video/1' }]) as { error?: string }
     expect(out.error).toBe('当前仅支持 YouTube 和 Bilibili 公公开视频')
+    expect(calls).toEqual([])
   })
 
   it('saveAs copies to the destination and reports failures as {error}', async () => {

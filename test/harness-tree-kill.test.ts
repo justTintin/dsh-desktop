@@ -105,7 +105,7 @@ describe('Harness 退出路径的连树杀（Windows）', () => {
   it('stop() 走 killTree（注入缝记录 pid），不对子进程发 SIGTERM', async () => {
     const f = makeRuntime('win32')
     const starting = f.runtime.start(f.dir)
-    await vi.waitFor(() => expect(f.launched()).toBe(true), { timeout: 10_000, interval: 50 })
+    await vi.waitFor(() => expect(f.launched()).toBe(true), { timeout: 20_000, interval: 50 }) // 预热捕获超时 win32=15s/linux=10s，waitFor 必须盖过它（全量负载下 PowerShell 会落在 10~15s 区间）
     const stopping = f.runtime.stop()
     await vi.waitFor(() => expect(f.treeKills).toEqual([4242]), { timeout: 10_000, interval: 50 })
     f.exit()
@@ -116,7 +116,7 @@ describe('Harness 退出路径的连树杀（Windows）', () => {
   it('pid 为 null（spawn 未成）回退 SIGTERM，不调 killTree', async () => {
     const f = makeRuntime('win32', { pid: null })
     const starting = f.runtime.start(f.dir)
-    await vi.waitFor(() => expect(f.launched()).toBe(true), { timeout: 10_000, interval: 50 })
+    await vi.waitFor(() => expect(f.launched()).toBe(true), { timeout: 20_000, interval: 50 }) // 预热捕获超时 win32=15s/linux=10s，waitFor 必须盖过它（全量负载下 PowerShell 会落在 10~15s 区间）
     const stopping = f.runtime.stop()
     f.exit()
     await Promise.all([starting, stopping])
@@ -148,7 +148,7 @@ describe('Harness 退出路径（非 Windows 维持信号语义）', () => {
   it('stop() 发 SIGTERM，不调 killTree', async () => {
     const f = makeRuntime('linux')
     const starting = f.runtime.start(f.dir)
-    await vi.waitFor(() => expect(f.launched()).toBe(true), { timeout: 10_000, interval: 50 })
+    await vi.waitFor(() => expect(f.launched()).toBe(true), { timeout: 20_000, interval: 50 }) // 预热捕获超时 win32=15s/linux=10s，waitFor 必须盖过它（全量负载下 PowerShell 会落在 10~15s 区间）
     const stopping = f.runtime.stop()
     f.exit()
     await Promise.all([starting, stopping])

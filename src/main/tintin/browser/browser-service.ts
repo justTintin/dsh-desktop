@@ -9,6 +9,10 @@
 //   cookies/cookies_<platform>.txt`（导航后防抖自动 + 窗口隐藏时 + 面板手动）→
 //   宿主 ytdlp 门读该目录前置 --cookies。harness 子进程拿不到 Electron session，
 //   导出只能在壳进程，走约定目录交接。
+//   2026-09-28 分区事故修复：view 创建时未挂 partition（登录落默认 session，导出读
+//   分区=永远空）→ view 按平台分区创建（Map 常驻）+ 默认 session 存量登录一次性迁回
+//   分区（exportCurrentCookies/ensureBrowserView 时幂等触发）；宿主门另在 probe/download
+//   前经回环主动同步（免手动导出，用户裁决）。
 // ═══════════════════════════════════════════════════════════════
 import { app, BrowserWindow, ipcMain, session, shell, WebContentsView } from 'electron'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -120,9 +124,56 @@ export async function exportPlatformCookies(
   }
 }
 
-// ── 引擎状态（单例 BrowserView，只挂独立窗口） ──────────────────────────────
+/** 默认 session → 平台分区的一次性登录态迁移（2026-09-28 分区事故救援）。
+ *  事故期间用户在内置浏览器的登录全落在默认 session，而消费链只认分区；分区事故修复
+ *  （view 挂 partition）后，把默认 session 里该平台域的存量 cookie 迁回分区，用户免重登。
+ *  幂等：仅当分区对该平台域完全无 cookie 时迁移（有任意一条即认为分区已有自己的登录态，
+ *  不覆盖不合并）；单条 set 失败不阻断。返回迁移条数。 */
+async function migrateDefaultSessionCookies(platform: string): Promise<number> {
+  const def = platformOf(platform)
+  const domains = PLATFORM_COOKIE_DOMAINS[platform]
+  if (!def || !domains?.length) return 0
+  try {
+    const existing = await collectPlatformCookies(platform)
+    if (existing.length > 0) return 0
+    const partSess = session.fromPartition(def.partition)
+    const seen = new Set<string>()
+    let migrated = 0
+    for (const domain of domains) {
+      let cookies: ElectronCookie[] = []
+      try { cookies = await session.defaultSession.cookies.get({ domain }) as unknown as ElectronCookie[] } catch { continue }
+      for (const c of cookies) {
+        const key = `${c.domain}|${c.path}|${c.name}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        try {
+          await partSess.cookies.set({
+            url: `https://${String(c.domain || '').replace(/^\./, '')}${c.path || '/'}`,
+            name: c.name,
+            value: c.value,
+            domain: c.domain,
+            path: c.path,
+            secure: c.secure,
+            expirationDate: c.expirationDate,
+          })
+          migrated++
+        } catch { /* 单条失败不阻断（如域/路径非法） */ }
+      }
+    }
+    if (migrated > 0) ctxLog(`login migrate: default session -> ${def.partition} (${migrated} cookies)`)
+    return migrated
+  } catch (err) {
+    ctxLog(`login migrate failed for ${platform}: ${err instanceof Error ? err.message : err}`)
+    return 0
+  }
+}
 
-let browserView: WebContentsView | null = null
+// ── 引擎状态（SRC viewPool 语义：每平台分区一个 view 常驻保登录态；active 跟随 currentPlatform）──
+// 2026-09-28 登录态分区事故：view 此前创建时未挂 partition，登录全部落到默认 session，
+// 而 cookies 导出/登录态展示读的是各平台分区 → 导出永远为空 → yt-dlp 拿不到登录态。
+// 修复=按分区建 view + 默认 session 存量登录一次性迁移（见 migrateDefaultSessionCookies）。
+
+const browserViews = new Map<string, WebContentsView>()
 let browserWindow: BrowserWindow | null = null
 let currentPlatform: string | null = null
 let userQuit = false
@@ -130,15 +181,73 @@ let extManager: ExtensionManager | null = null
 let downloadManager: DownloadManager | null = null
 let mediaStorage: MediaStorage | null = null
 let loopback: LoopbackService | null = null
+// 浏览器窗口页面（build/tintin-browser.html，2026-09-28 用户裁决：整体按原客户端
+// 实现——页面承载工具条/左栏/右栏/下载栏，原生视图按页面宿主矩形覆盖）
+let pageHostRect: { x: number; y: number; width: number; height: number } | null = null
+const pageDownloads = new Map<string, { taskId: string; file: string; percent: number; state: string; speed?: number }>()
 
 function platformOf(p: string | null): PlatformDef | null {
   return p ? PLATFORM_DEFS[p] ?? null : null
 }
 
-function ensureBrowserView(): WebContentsView {
-  if (browserView && !browserView.webContents.isDestroyed()) return browserView
-  browserView = new WebContentsView({
+/** 当前平台的活跃 view（未打开/已销毁 → null） */
+function activeView(): WebContentsView | null {
+  const v = currentPlatform ? browserViews.get(currentPlatform) : null
+  return v && !v.webContents.isDestroyed() ? v : null
+}
+
+/** 本地页面资源路径（同 index.ts desktopResourcePath 口径） */
+function browserPagePath(): string {
+  return app.isPackaged ? join(process.resourcesPath, 'tintin-browser.html') : join(app.getAppPath(), 'build', 'tintin-browser.html')
+}
+
+/** 导航态推给页面工具条（activeView 的 URL/导航能力/加载中 + 平台 id） */
+function pushPageState(): void {
+  const win = browserWindow
+  if (!win || win.isDestroyed()) return
+  const wc = activeView()?.webContents
+  let url = ''
+  let canBack = false
+  let canForward = false
+  let loading = false
+  try {
+    if (wc && !wc.isDestroyed()) {
+      url = wc.getURL?.() || ''
+      canBack = wc.navigationHistory.canGoBack()
+      canForward = wc.navigationHistory.canGoForward()
+      loading = wc.isLoading()
+    }
+  } catch { /* 销毁竞态，按空态推 */ }
+  try {
+    win.webContents.send('tintin-browser-page:state', { url, canBack, canForward, loading, platform: currentPlatform })
+  } catch { /* 页面未就绪 */ }
+}
+
+/** 窗口布局：活跃平台 view 覆盖页面宿主矩形（页面侧 ResizeObserver 上报） */
+function layoutBrowserWindow(): void {
+  const win = browserWindow
+  if (!win || win.isDestroyed()) return
+  const view = activeView()
+  if (!view) return
+  const rect = pageHostRect
+  if (!rect || rect.width <= 0 || rect.height <= 0) {
+    try { win.contentView.removeChildView(view) } catch { /* 未挂载 */ }
+    return
+  }
+  view.setBounds({ x: rect.x, y: rect.y, width: rect.width, height: rect.height })
+  try { win.contentView.addChildView(view) } catch { /* 已挂载 */ }
+}
+
+function ensureBrowserView(platform: string): WebContentsView {
+  const existing = browserViews.get(platform)
+  if (existing && !existing.webContents.isDestroyed()) return existing
+  const def = platformOf(platform)
+  if (!def) throw new Error(`未知平台: ${platform}`)
+  const view = new WebContentsView({
     webPreferences: {
+      // 根因修复（2026-09-28）：必须挂平台持久分区——不挂=默认 session，
+      // 登录进不去分区，导出/展示/下载链路全部读到空
+      partition: def.partition,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -147,74 +256,96 @@ function ensureBrowserView(): WebContentsView {
       spellcheck: false,
     },
   })
-  browserView.setBackgroundColor('#ffffff')
-  browserView.webContents.setWindowOpenHandler(({ url }) => {
+  view.setBackgroundColor('#ffffff')
+  view.webContents.setWindowOpenHandler(({ url }) => {
     // C7 通用浏览器红线：外链一律交系统浏览器（SRC browser-window.js 同款）
     if (/^https?:\/\//i.test(url)) shell.openExternal(url)
     return { action: 'deny' }
   })
-  // 登录态落盘：导航稳定后延迟导出（避免每帧请求写盘）
+  // 登录态落盘：导航稳定后延迟导出（避免每帧请求写盘）；导航态同步推页面工具条
   let exportTimer: NodeJS.Timeout | null = null
-  browserView.webContents.on('did-navigate', () => {
+  const onNavEvent = (): void => {
     if (exportTimer) clearTimeout(exportTimer)
     exportTimer = setTimeout(() => { void exportCurrentCookies() }, 2000)
+    pushPageState()
+  }
+  view.webContents.on('did-navigate', () => {
+    onNavEvent()
     // B站下载助手：随包扩展注入（SRC viewpool platformId==='bilibili' 分支同口径；
-    // 装了插件 → B站下载交给插件，无需嗅探）
-    const view = browserView
-    if (view && currentPlatform === 'bilibili' && bilibiliHelperInstalled()) {
+    // 装了插件 → B站下载交给插件，无需嗅探）。view 挂分区后此 session 即 view 所用 session
+    if (platform === 'bilibili' && currentPlatform === 'bilibili' && bilibiliHelperInstalled()) {
       const extPath = findBilibiliHelperDir()
       const sess = session.fromPartition(PLATFORM_DEFS.bilibili!.partition)
       if (extPath && sess) injectBilibiliHelper(view.webContents, extPath, sess)
     }
   })
-  return browserView
+  view.webContents.on('did-navigate-in-page', onNavEvent)
+  view.webContents.on('did-start-loading', () => pushPageState())
+  view.webContents.on('did-stop-loading', () => pushPageState())
+  // 分区存量救援：分区空而默认 session 有该平台登录（分区事故期间落的）→ 迁回
+  void migrateDefaultSessionCookies(platform)
+  browserViews.set(platform, view)
+  return view
 }
 
 function attachToWindow(): void {
   const win = browserWindow
   if (!win || win.isDestroyed()) return
-  const view = ensureBrowserView()
-  // 原生下载接管（幂等：session 每分区只挂一次）
-  const sess = session.fromPartition(platformOf(currentPlatform)?.partition || PLATFORM_DEFS.web!.partition)
+  const view = activeView()
+  if (!view) return
+  // 原生下载接管（幂等：session 每分区只挂一次）；挂 view 实际使用的分区 session
+  const sess = platformOf(currentPlatform)
+    ? session.fromPartition(platformOf(currentPlatform)!.partition)
+    : session.defaultSession
   if (downloadManager && !(sess as unknown as { __tintinDlAttached?: boolean }).__tintinDlAttached) {
     ;(sess as unknown as { __tintinDlAttached?: boolean }).__tintinDlAttached = true
     downloadManager.attachSession(sess)
   }
-  const size = win.getContentSize()
-  view.setBounds({ x: 0, y: 0, width: size[0] ?? 0, height: size[1] ?? 0 })
-  win.contentView.addChildView(view)
-  // 视图跟随窗口尺寸（2026-09-28 用户报障：最大化后仍显示创建时的局部——
-  // 挂载只设了一次 bounds，缺 resize 跟随）。resize 事件覆盖拖拽与最大化。
-  if (!(win as unknown as { __tintinResizeWired?: boolean }).__tintinResizeWired) {
-    ;(win as unknown as { __tintinResizeWired?: boolean }).__tintinResizeWired = true
-    win.on('resize', () => {
-      const v = browserView
-      if (!v || v.webContents.isDestroyed() || !browserWindow || browserWindow.isDestroyed()) return
-      const s = browserWindow.getContentSize()
-      v.setBounds({ x: 0, y: 0, width: s[0] ?? 0, height: s[1] ?? 0 })
-    })
+  // 切平台：其余平台的 view 从窗口摘下（view 本体常驻保登录态，不销毁）
+  for (const [p, v] of browserViews) {
+    if (p !== currentPlatform) {
+      try { win.contentView.removeChildView(v) } catch { /* 未挂载/已销毁 */ }
+    }
   }
+  win.contentView.addChildView(view)
+  layoutBrowserWindow()
+  pushPageState()
 }
 
 async function navigateTo(platform: string): Promise<{ ok: boolean; error?: string }> {
   const def = platformOf(platform)
   if (!def) return { ok: false, error: `未知平台: ${platform}` }
   currentPlatform = platform
-  ensureBrowserView().webContents.loadURL(def.seedUrl).catch(() => { /* 加载失败页面自显示错误 */ })
+  ensureBrowserView(platform)
+  attachToWindow()
+  const view = activeView()
+  if (view) view.webContents.loadURL(def.seedUrl).catch(() => { /* 加载失败页面自显示错误 */ })
   return { ok: true }
 }
 
-/** 导出 cookies（有当前平台只导它；否则全平台逐个导；返回各平台条数） */
+/** 导出 cookies（有当前平台只导它；否则全平台逐个导；返回各平台条数）。
+ *  每平台导出前先做默认 session→分区存量迁移（幂等，见 migrateDefaultSessionCookies），
+ *  保证 probe/download 的自动同步即使不打开浏览器窗口也能救回事故期登录。 */
 async function exportCurrentCookies(): Promise<Record<string, number>> {
   const dir = browserCookiesDir()
   mkdirSync(dir, { recursive: true })
   const targets = currentPlatform ? [currentPlatform] : Object.keys(PLATFORM_COOKIE_DOMAINS)
   const result: Record<string, number> = {}
   for (const platform of targets) {
+    await migrateDefaultSessionCookies(platform)
     const out = await exportPlatformCookies(platform, join(dir, `cookies_${platform}.txt`))
     result[platform] = out?.count ?? 0
   }
   return result
+}
+
+/** 加载浏览器整体页面（build/tintin-browser.html；打包=resources 根） */
+async function loadDesktopPage(win: BrowserWindow): Promise<void> {
+  try {
+    await win.loadFile(browserPagePath())
+  } catch (err) {
+    ctxLog('browser page load failed: ' + (err instanceof Error ? err.message : err))
+  }
 }
 
 /** 独立窗口（SRC browser-window.js 先例）：单实例、close=hide（登录态/缓存驻留） */
@@ -234,8 +365,14 @@ function ensureBrowserWindow(mainWindow: BrowserWindow): BrowserWindow {
       sandbox: true,
       webviewTag: false,
       spellcheck: false,
+      preload: join(import.meta.dirname, '../preload/index.cjs'),
     },
   })
+  // 整体页面（工具条/左栏/右栏/下载栏）承载 UI；原生 view 由 bounds 同步覆盖宿主矩形
+  void loadDesktopPage(browserWindow)
+  // 视图跟随窗口尺寸（2026-09-28 用户报障：最大化后仍显示创建时的局部——
+  // 挂载只设了一次 bounds，缺 resize 跟随）。统一走 layoutBrowserWindow。
+  browserWindow.on('resize', () => layoutBrowserWindow())
   browserWindow.on('close', (ev) => {
     if (userQuit) return
     ev.preventDefault()
@@ -254,8 +391,117 @@ function ensureBrowserWindow(mainWindow: BrowserWindow): BrowserWindow {
   return browserWindow
 }
 
+/** 下载广播镜像到浏览器窗口页面下载栏（payload.file 由 download-manager 附加；终态 4s 后撤行） */
+function mirrorPageDownload(
+  channel: 'downloads:progress' | 'downloads:done' | 'downloads:error',
+  payload: Record<string, unknown>,
+): void {
+  const win = browserWindow
+  if (!win || win.isDestroyed()) return
+  const taskId = String(payload.taskId || '')
+  if (!taskId) return
+  const file = String(payload.file || '下载文件')
+  if (channel === 'downloads:progress') {
+    pageDownloads.set(taskId, {
+      taskId,
+      file,
+      state: payload.state === 'paused' ? 'paused' : 'downloading',
+      percent: Number(payload.percent) || 0,
+      speed: Number(payload.speed) || 0,
+    })
+  } else {
+    pageDownloads.set(taskId, {
+      taskId,
+      file,
+      state: channel === 'downloads:done' ? 'done' : 'error',
+      percent: channel === 'downloads:done' ? 100 : Number(payload.percent) || 0,
+    })
+    setTimeout(() => {
+      pageDownloads.delete(taskId)
+      pushPageDownloads()
+    }, 4000)
+  }
+  pushPageDownloads()
+}
+
+/** 下载列表推页面下载栏 */
+function pushPageDownloads(): void {
+  const win = browserWindow
+  if (!win || win.isDestroyed()) return
+  try { win.webContents.send('tintin-browser-page:downloads', [...pageDownloads.values()]) } catch { /* 页面未就绪 */ }
+}
+
 /** 注册壳侧 IPC（createWindow 之后调用；mainWindow 用于独立窗口生命周期联动） */
+/** 登录态自动落盘（2026-09-28 用户裁决：客户端与内置浏览器一体，登录即同步，
+ *  不存在手动导出）。分区 cookie 任何变化 / 内嵌页导航后防抖导出一次。 */
+const cookieSyncTimers = new Map<string, NodeJS.Timeout>()
+
+function scheduleCookieSync(platform: string | null = null): void {
+  const key = platform || '*'
+  const prev = cookieSyncTimers.get(key)
+  if (prev) clearTimeout(prev)
+  cookieSyncTimers.set(key, setTimeout(() => {
+    cookieSyncTimers.delete(key)
+    void exportCurrentCookies().catch(() => { /* 同步失败下次变化重试 */ })
+  }, 2000))
+}
+
+/** 一次性挂各平台分区 cookie 变化监听（login/logout/刷新都会触发 changed） */
+let cookieWatchInstalled = false
+
 export function registerBrowserService(mainWindow: BrowserWindow): void {
+  // 登录即同步：所有平台分区的 cookie 变化 → 防抖自动导出（网页/独立窗口两形态通用）
+  if (!cookieWatchInstalled) {
+    cookieWatchInstalled = true
+    for (const platform of Object.keys(PLATFORM_COOKIE_DOMAINS)) {
+      try {
+        session.fromPartition(PLATFORM_DEFS[platform]!.partition).cookies.on('changed', () => scheduleCookieSync(platform))
+      } catch (err) {
+        ctxLog(`cookie watch failed for ${platform}: ${err instanceof Error ? err.message : err}`)
+      }
+    }
+  }
+  // ── 浏览器窗口页面通道（2026-09-28 整体形态：页面承载 UI，原生视图按宿主矩形覆盖）──
+  ipcMain.handle('tintin-browser-page:bounds', (_e, rect: unknown) => {
+    const r = (rect || {}) as { x?: unknown; y?: unknown; width?: unknown; height?: unknown }
+    pageHostRect = { x: Number(r.x) || 0, y: Number(r.y) || 0, width: Number(r.width) || 0, height: Number(r.height) || 0 }
+    layoutBrowserWindow()
+    return { ok: true }
+  })
+  ipcMain.handle('tintin-browser-page:open', (_e, payload: unknown) => {
+    const id = String((payload as { platform?: unknown })?.platform || '')
+    if (!platformOf(id)) return { ok: false, error: `未知平台: ${id}` }
+    const win = ensureBrowserWindow(mainWindow)
+    if (win.isMinimized()) win.restore()
+    win.show()
+    win.focus()
+    return navigateTo(id)
+  })
+  ipcMain.handle('tintin-browser-page:action', (_e, payload: unknown) => {
+    const a = (payload || {}) as { type?: unknown; url?: unknown }
+    const wc = activeView()?.webContents
+    if (!wc) return { ok: false, error: '尚未打开任何平台页面' }
+    try {
+      const type = String(a.type || '')
+      if (type === 'back' && wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack()
+      else if (type === 'forward' && wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward()
+      else if (type === 'reload') wc.reload()
+      else if (type === 'stop') wc.stop()
+      else if (type === 'home') {
+        const seed = platformOf(currentPlatform)?.seedUrl || PLATFORM_DEFS.web!.seedUrl
+        void wc.loadURL(seed).catch(() => { /* 页面自显示错误 */ })
+      } else if (type === 'go' && a.url) {
+        void wc.loadURL(String(a.url)).catch(() => { /* 页面自显示错误 */ })
+      } else if (type === 'server') {
+        return { ok: false, error: '请在主窗口设置的模型服务商中配置服务端地址' }
+      } else {
+        return { ok: false, error: '未知动作' }
+      }
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
   app.on('before-quit', () => { userQuit = true })
 
   // ── 扩展管理（SRC thickShell 启动段 + ext:* 三通道移植）────────────────
@@ -289,6 +535,7 @@ export function registerBrowserService(mainWindow: BrowserWindow): void {
       try {
         if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload)
       } catch { /* 窗口已销毁 */ }
+      mirrorPageDownload(channel, payload)
     },
   })
   downloadManager.registerIpc(ipcMain)
@@ -337,14 +584,10 @@ export function registerBrowserService(mainWindow: BrowserWindow): void {
     app,
     getBrowserWindow: () => browserWindow,
     getOrCreateView: (platformId: string) => {
-      const win = ensureBrowserWindow(mainWindow)
+      ensureBrowserWindow(mainWindow)
       if (currentPlatform !== platformId) void navigateTo(platformId)
-      const view = ensureBrowserView()
-      const size = win.getContentSize()
-      view.setBounds({ x: 0, y: 0, width: size[0] ?? 0, height: size[1] ?? 0 })
-      const children = win.contentView.children ?? []
-      if (!(children as unknown as Electron.WebContentsView[]).includes(view)) win.contentView.addChildView(view)
-      return view
+      else { ensureBrowserView(platformId); attachToWindow() }
+      return activeView() ?? ensureBrowserView(platformId)
     },
   })
 
@@ -383,11 +626,10 @@ export function registerBrowserService(mainWindow: BrowserWindow): void {
   })
 
   // 打开平台（独立窗口 + 导航 seed URL）；窗口已存活则聚焦复用
-  // 抽为 openPlatform 供回环门面复用
+  // 抽为 openPlatform 供回环门面复用。挂载/切换由 navigateTo 统一处理
   const openPlatform = (id: string) => {
     if (!platformOf(id)) return { ok: false, error: `未知平台: ${id}` }
     const win = ensureBrowserWindow(mainWindow)
-    attachToWindow()
     if (win.isMinimized()) win.restore()
     win.show()
     win.focus()
@@ -408,17 +650,19 @@ export function registerBrowserService(mainWindow: BrowserWindow): void {
 
   // browser:extractDOM — 运行平台抽取脚本（SRC thickShell-ipc browser:extractDOM
   // 移植；E3 结构化错误：NEED_LOGIN / RISK_CAPTCHA / DOM_MISMATCH / NETWORK_ERROR）。
-  // 我们的单例 BrowserView 即 SRC 的 viewPool entry（当前平台=导航目标）。
+  // 分区化 view 池即 SRC 的 viewPool entry（当前平台=导航目标；每平台分区一个常驻 view）。
   // 核心逻辑抽为 extractNow 供回环门面（loopback-service）复用
   const extractNow = async (platformId: unknown) => {
     try {
       const id = String(platformId || '')
       if (!PLATFORM_IDS.includes(id)) return extractionError('NEED_PLATFORM', '缺少平台参数')
-      if (!browserView || browserView.webContents.isDestroyed() || currentPlatform !== id) {
-        return extractionError('NOT_ATTACHED', '平台页面尚未打开', '先点击平台打开独立浏览器窗口')
+      const view = activeView()
+      if (!view || currentPlatform !== id) {
+        return extractionError('NOT_ATTACHED', '平台页面尚未打开', '先点击平台打开浏览器窗口')
       }
       const def = platformOf(id)
-      const wc = browserView.webContents
+      const wc = view.webContents
+
       // 1) 当前 URL 检查（离线兜底页/未加载）
       try {
         const cur = wc.getURL?.() || ''

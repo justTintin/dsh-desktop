@@ -4,7 +4,7 @@
 // 音频/视频 四组；智能混剪按 A1 裁决永久不移植故不列卡）；未移植卡以「建设中」
 // 角标占位（不可点，恢复一张加一张卡）。已可用：文案混剪、剪映模板、声音克隆、
 // 图像抠图、音频生成、参考视频下载（2026-09-25 用户裁决随产品资料批次移植）。
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import CopywritingMontage from './components/media-tools/copywriting-montage/CopywritingMontage.vue'
 // 剪映模板卡启用（2026-09-24 用户裁决：去掉「建设中」，可用）：组/子类目两级浏览 +
 // 从剪映同步（预设/文字模板/花字/贴纸/转场/音频）+ 字体（剪映）上传
@@ -33,6 +33,9 @@ import LiveClip from './components/media-tools/LiveClip.vue'
 // 结果画廊；AI 文案（/llm/chat/completions）可用，「开始生成」待服务端补
 // cover 工作流端点（组件头注登记实测缺口）
 import CoverMaker from './components/media-tools/CoverMaker.vue'
+// 「前往分镜」跨视图跳转（2026-09-27）：产品资料文案面板写入 pendingStoryboard
+// 信号后，本视图侦听并自动打开分镜脚本创作卡
+import { pendingStoryboard } from './composables/pendingStoryboard'
 
 interface ToolCard {
   id: string
@@ -82,6 +85,9 @@ const GROUPS: Array<{ group: string; tools: ToolCard[] }> = [
 
 const ALL_TOOLS = GROUPS.flatMap((g) => g.tools)
 const active = ref<string | null>(null)
+// 「前往分镜」跨视图跳转（2026-09-27）：产品资料·文案面板写入 pendingStoryboard
+// 信号后自动打开分镜脚本创作卡（信号由 OtStoryboard 挂载/在位时消费）
+watch(pendingStoryboard, (v) => { if (v) active.value = 'storyboard' })
 const activeTool = computed(() => ALL_TOOLS.find((t) => t.id === active.value) ?? null)
 
 function openTool(t: ToolCard): void {

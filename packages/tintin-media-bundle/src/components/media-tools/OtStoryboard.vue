@@ -9,10 +9,25 @@
 // 分层：本组件只绘制 + 事件转发，业务在 useOpsStoryboard。
 // ═══════════════════════════════════════════════════════════════
 
+import { onMounted, watch } from 'vue'
 import { RATIO_OPTIONS, ratioToOrient, totalDuration } from '@/composables/opsStoryboardLogic'
 import { useOpsStoryboard } from '@/composables/useOpsStoryboard'
+import { takePendingStoryboard, pendingStoryboard } from '@/composables/pendingStoryboard'
 
 const S = useOpsStoryboard()
+
+// 一次性消费「前往分镜脚本设计」信号（产品资料·文案面板跳转带入，2026-09-27
+// 打通：分镜卡挂载/卡片在位时重复跳转均消费）——文案与产品上下文回填。
+function applyPendingStoryboard(): void {
+  const d = takePendingStoryboard()
+  if (!d) return
+  if (d.copyText.trim()) S.copyText.value = d.copyText
+  const p = d.product || {}
+  if (Object.values(p).some((v) => String(v).trim())) S.product.value = { ...p }
+  S.status.value = '已带入产品资料文案——点击「生成分镜脚本」继续。'
+}
+onMounted(applyPendingStoryboard)
+watch(pendingStoryboard, applyPendingStoryboard)
 
 /** 下拉选项展示文案（原版 L1769-1771：[选题] N镜 · 保存时间） */
 function scriptLabel(o: { topic: string; shotCount: number; savedAt: string }): string {

@@ -95,7 +95,7 @@ export interface VoiceRow {
   audioUrl: string
   audioPath?: string  // 本地文件路径（命名规范落盘后）
   error: string
-  engine?: 'voxcpm2' | 'indextts' | 'qwen3'  // 生成所用模型（切换引擎时用于清理旧结果/展示标注）
+  engine?: 'voxcpm2' | 'voxcpm' | 'indextts' | 'qwen3'  // 生成所用模型（切换引擎时用于清理旧结果/展示标注）
 }
 
 /** 音色/样本目录项（来自 /voices/list、/voices/samples） */
@@ -126,8 +126,9 @@ export function useVoiceCloneStudio() {
   // 2026-09-05 用户裁决：声音克隆固定使用 IndexTTS，不再使用 voxcpm（无引擎选择器）
   // 2026-09-20（服务端 TTS 统一入口）：引擎可选——qwen3=Qwen3-TTS（克隆必填 ref_text）
   // 2026-09-20 用户裁决：所有声音克隆默认 QwenTTS（engine=qwen3，tab 选择默认高亮 QwenTTS）
-  const ttsEngine = ref<'indextts' | 'qwen3'>('qwen3')
-  const wholeEngine = ref<'indextts' | 'qwen3'>(ttsEngine.value)
+  // 2026-09-28 用户裁决：默认引擎 VoxCPM2（engine=voxcpm；服务端 0928 已恢复）
+  const ttsEngine = ref<'indextts' | 'qwen3' | 'voxcpm'>('voxcpm')
+  const wholeEngine = ref<'indextts' | 'qwen3' | 'voxcpm'>(ttsEngine.value)
   // ── Qwen3-TTS 专属设置（契约 IndexTTSRequest：speaker 预置音色 / instruct 指令文本；
   //    duration_factor/emo_text/emo_alpha 为 IndexTTS 专属，qwen3 不支持）──
   const qwen3Speaker = ref('')
@@ -550,7 +551,7 @@ export function useVoiceCloneStudio() {
         // 2026-09-20（服务端 TTS 统一入口）：engine=qwen3 → Qwen3-TTS；
         // ref_text=参考音频文稿（Qwen3 克隆必填，缺失服务端 400）
         ...(ttsEngine.value !== 'indextts' ? { engine: ttsEngine.value } : {}),
-        ...(ttsEngine.value === 'qwen3' && refText.value.trim() ? { ref_text: refText.value.trim() } : {}),
+        ...(ttsEngine.value !== 'indextts' && refText.value.trim() ? { ref_text: refText.value.trim() } : {}),
         // 2026-09-20 用户裁决：Qwen3 专属设置（预置音色/指令文本）——qwen3 不支持
         // IndexTTS 的 duration_factor/emo_text/emo_alpha（此前误发致「变速不起作用」）
         ...(ttsEngine.value === 'qwen3'
@@ -642,7 +643,7 @@ export function useVoiceCloneStudio() {
         // 2026-09-20（服务端 TTS 统一入口）：engine=qwen3 → Qwen3-TTS；
         // ref_text=参考音频文稿（Qwen3 克隆必填，缺失服务端 400）
         ...(wholeEngine.value !== 'indextts' ? { engine: wholeEngine.value } : {}),
-        ...(wholeEngine.value === 'qwen3' && refText.value.trim() ? { ref_text: refText.value.trim() } : {}),
+        ...(wholeEngine.value !== 'indextts' && refText.value.trim() ? { ref_text: refText.value.trim() } : {}),
         // 2026-09-20 用户裁决：Qwen3 专属设置（预置音色/指令文本）——qwen3 不支持
         // IndexTTS 的 duration_factor/emo_text/emo_alpha（此前误发致「变速不起作用」）
         ...(wholeEngine.value === 'qwen3'

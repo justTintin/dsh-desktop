@@ -443,6 +443,10 @@
         "to": "web-import.html"
       },
       {
+        "from": "build/tintin-browser.html",
+        "to": "tintin-browser.html"
+      },
+      {
         "from": "build/safe-mode.html",
         "to": "safe-mode.html"
       },

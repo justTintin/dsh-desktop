@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { DesktopStorageManager, STORAGE_FILENAME } from '../src/main/state/desktop-storage'
 
-const lockedDirectoryCodes = new Set(['EBUSY', 'EPERM', 'EACCES'])
+const lockedDirectoryCodes = new Set(['EBUSY', 'EPERM', 'EACCES', 'ENOTEMPTY'])
 
 async function removeTempDir(dir: string): Promise<void> {
   for (let attempt = 0; attempt < 8; attempt++) {
@@ -84,11 +84,21 @@ describe('DesktopStorageManager', () => {
       manager.setItem('async-key', 'first')
       manager.setItem('async-key', 'second')
 
-      // Wait for debounce timeout
-      await new Promise((resolve) => setTimeout(resolve, 100))
-
-      const fileContent = await readFile(join(tempDir, STORAGE_FILENAME), 'utf8')
+      // 全量并发下防抖写盘可能晚于固定等待：轮询等文件出现（≤5s），不靠运气
+      const storagePath = join(tempDir, STORAGE_FILENAME)
+      let fileContent = ''
+      for (let attempt = 0; attempt < 100; attempt++) {
+        try {
+          fileContent = await readFile(storagePath, 'utf8')
+          break
+        } catch {
+          await new Promise((resolve) => setTimeout(resolve, 50))
+        }
+      }
       expect(JSON.parse(fileContent)).toEqual({ 'async-key': 'second' })
+
+      // 取消残余防抖定时器并确保落盘收尾，避免 teardown 后异步写回与删目录竞态
+      await manager.flush()
     } finally {
       await removeTempDir(tempDir)
     }

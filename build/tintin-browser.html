@@ -1,0 +1,271 @@
+<!doctype html>
+<!-- tintin-browser.html — TinTin 浏览器窗口整体页面（2026-09-28 用户裁决：浏览器整体
+     按原客户端实现，废弃 harness tab 内嵌）。结构对照 SRC desktop/renderer/src/browser/
+     Browser.vue：顶部工具条 + 左栏（平台/功能扩展）+ 主区（原生 WebContentsView 经
+     bounds 同步覆盖 #view-host）+ 右栏（媒体嗅探位）+ 下载栏。
+     桥：复用 preload index.cjs 的 window.dshDesktopBrowser（platforms/loginStatus/
+     onDownloadEvent）+ tintinBrowserPage 通道（bounds/nav/open/state）。 -->
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' file:; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
+  <title>TinTin 浏览器</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bar-h: 46px;
+      --side-w: 208px;
+      --right-w: 260px;
+      --bg: #f7f7f8; --surface: #ffffff; --line: #e4e4e7; --ink: #18181b;
+      --muted: #71717a; --primary: #4f7cff; --ok: #16a34a; --bad: #dc2626;
+    }
+    * { box-sizing: border-box; margin: 0; user-select: none; }
+    html, body { width: 100%; height: 100%; overflow: hidden; }
+    body { font: 13px/1.4 "Segoe UI", "Microsoft YaHei", sans-serif; color: var(--ink); background: var(--bg); display: flex; flex-direction: column; }
+    button { font: inherit; cursor: pointer; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #141416; --surface: #1e1e20; --line: #333; --ink: #e8e8e6; --muted: #8b8b88; }
+    }
+    /* ── 工具条 ── */
+    #bar { height: var(--bar-h); flex-shrink: 0; display: flex; align-items: center; gap: 6px; padding: 0 10px; background: var(--surface); border-bottom: 1px solid var(--line); }
+    .ic { width: 30px; height: 30px; border: 0; border-radius: 6px; background: transparent; color: var(--ink); font-size: 15px; }
+    .ic:not(:disabled):hover { background: rgba(127,127,127,.15); }
+    .ic:disabled { color: var(--muted); opacity: .5; cursor: default; }
+    #addr { flex: 1 1 auto; min-width: 0; height: 30px; padding: 0 12px; border: 1px solid var(--line); border-radius: 15px; background: var(--bg); color: var(--ink); font-size: 12px; outline: none; user-select: text; }
+    #addr:focus { border-color: var(--primary); }
+    #dlBtn { position: relative; }
+    #dlBadge { position: absolute; top: 1px; right: 1px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px; background: var(--primary); color: #fff; font-size: 10px; line-height: 15px; text-align: center; display: none; }
+    /* ── 主体 ── */
+    #body { flex: 1 1 auto; display: flex; min-height: 0; }
+    #side { width: var(--side-w); flex-shrink: 0; background: var(--surface); border-right: 1px solid var(--line); overflow-y: auto; padding: 10px 8px; display: flex; flex-direction: column; }
+    .side-title { font-size: 11px; color: var(--muted); padding: 6px 8px 4px; }
+    .side-title.ext { margin-top: 10px; }
+    .plat-btn { width: 100%; display: flex; align-items: center; gap: 8px; padding: 7px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--ink); text-align: left; }
+    .plat-btn:hover { background: rgba(127,127,127,.12); }
+    .plat-btn.active { background: var(--primary); color: #fff; }
+    .plat-badge { width: 22px; height: 22px; flex-shrink: 0; border-radius: 6px; background: rgba(127,127,127,.18); color: var(--ink); font-size: 11px; line-height: 22px; text-align: center; }
+    .plat-btn.active .plat-badge { background: rgba(255,255,255,.25); color: #fff; }
+    .plat-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .plat-state { flex-shrink: 0; font-size: 10px; color: var(--muted); }
+    .plat-btn.active .plat-state { color: rgba(255,255,255,.85); }
+    .side-foot { margin-top: auto; padding-top: 10px; }
+    /* ── 主区 ── */
+    #main { flex: 1 1 auto; min-width: 0; position: relative; background: var(--bg); }
+    .view { position: absolute; inset: 0; display: none; overflow: auto; padding: 16px; }
+    .view.active { display: block; }
+    #view-host { position: absolute; inset: 0; background: #fff; }
+    #hostTip { position: absolute; left: 10px; bottom: 8px; z-index: 2; padding: 2px 8px; border-radius: 6px; background: rgba(0,0,0,.45); color: #fff; font-size: 11px; pointer-events: none; }
+    .placeholder { padding: 48px 24px; text-align: center; color: var(--muted); }
+    .placeholder h3 { color: var(--ink); margin-bottom: 8px; }
+    /* ── 右栏 ── */
+    #right { width: var(--right-w); flex-shrink: 0; background: var(--surface); border-left: 1px solid var(--line); padding: 12px; overflow-y: auto; }
+    #right h4 { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+    /* ── 下载栏 ── */
+    #shelf { flex-shrink: 0; display: none; flex-direction: column; gap: 6px; padding: 8px 12px; background: var(--surface); border-top: 1px solid var(--line); max-height: 132px; overflow-y: auto; }
+    .dl { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--ink); }
+    .dl .name { flex: 0 1 auto; max-width: 42%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dl .track { flex: 1 1 auto; height: 5px; border-radius: 3px; background: rgba(127,127,127,.25); overflow: hidden; }
+    .dl .fill { display: block; height: 100%; width: 0; background: var(--primary); }
+    .dl.done .fill { background: var(--ok); } .dl.done .meta { color: var(--ok); }
+    .dl.error .fill { background: var(--bad); } .dl.error .meta { color: var(--bad); }
+    .dl .meta { flex-shrink: 0; min-width: 110px; text-align: right; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div id="bar">
+    <button class="ic" id="b-back" title="后退">‹</button>
+    <button class="ic" id="b-fwd" title="前进">›</button>
+    <button class="ic" id="b-rel" title="刷新">⟳</button>
+    <button class="ic" id="b-home" title="主页">⌂</button>
+    <input id="addr" spellcheck="false" placeholder="输入网址，回车打开" />
+    <button class="ic" id="dlBtn" title="下载">
+      ⬇<span id="dlBadge">0</span>
+    </button>
+  </div>
+  <div id="body">
+    <aside id="side">
+      <div class="side-title">平台</div>
+      <div id="platList"></div>
+      <div class="side-title ext">功能扩展</div>
+      <div id="extList"></div>
+      <div class="side-foot">
+        <button class="plat-btn" id="serverBtn" title="打开系统设置中配置的服务端地址"><span class="plat-badge">服</span><span class="plat-name">服务端</span></button>
+      </div>
+    </aside>
+    <main id="main">
+      <section class="view active" id="view-browser">
+        <div id="view-host"></div>
+        <div id="hostTip">浏览器</div>
+      </section>
+      <section class="view" id="view-autolisting">
+        <div class="placeholder"><h3>自动上架</h3><div>抖店工作台承载自动上架流程；点击左栏「抖店」进入工作台。</div></div>
+      </section>
+      <section class="view" id="view-favorites"><div class="placeholder"><h3>网页收藏</h3><div>移植排期中（SRC FavoritesView）。</div></div></section>
+      <section class="view" id="view-dailyassets"><div class="placeholder"><h3>每日素材</h3><div>移植排期中（SRC DailyAssetsView）。</div></div></section>
+      <section class="view" id="view-creators"><div class="placeholder"><h3>达人库</h3><div>移植排期中（SRC CreatorsView）。</div></div></section>
+      <section class="view" id="view-collect"><div class="placeholder"><h3>素材采集</h3><div>移植排期中（与达人库同一功能面）。</div></div></section>
+    </main>
+    <aside id="right">
+      <h4>媒体嗅探</h4>
+      <div class="placeholder" style="padding:24px 8px">嗅探面板移植排期中<br />（SRC SniffTab / 右栏）</div>
+    </aside>
+  </div>
+  <div id="shelf"></div>
+<script>
+(function () {
+  var bridge = window.dshDesktopBrowser || null
+  var page = window.tintinBrowserPage || null
+  var platforms = []
+  var currentId = null
+  var downloads = {}
+  var activeViewName = 'browser'
+
+  var $ = function (id) { return document.getElementById(id) }
+
+  // ── 工具条 ──
+  function paintBar(st) {
+    st = st || {}
+    $('b-back').disabled = !st.canBack
+    $('b-fwd').disabled = !st.canFwd
+    $('b-rel').textContent = st.loading ? '×' : '⟳'
+    $('b-rel').title = st.loading ? '停止' : '刷新'
+    if (document.activeElement !== $('addr')) $('addr').value = st.url || ''
+    var names = { web: '网页浏览器', douyin: '抖音', weixin: '视频号', kuaishou: '快手', xiaohongshu: '小红书', bilibili: 'B站', youtube: 'YouTube', jimeng: '即梦AI', fxg: '抖店' }
+    $('hostTip').textContent = (st.platform && (names[st.platform] || st.platform)) || '浏览器'
+  }
+
+  function nav(type, url) { if (page) page.action({ type: type, url: url }) }
+
+  $('b-back').onclick = function () { nav('back') }
+  $('b-fwd').onclick = function () { nav('forward') }
+  $('b-rel').onclick = function () { nav(relState === 'loading' ? 'stop' : 'reload') }
+  $('b-home').onclick = function () { nav('home') }
+  $('addr').addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter') return
+    var v = this.value.trim()
+    if (v) nav('go', /^https?:\/\//i.test(v) ? v : 'https://' + v)
+    this.blur()
+  })
+  var relState = ''
+
+  // ── 左栏：平台 + 功能扩展 ──
+  var EXT_ITEMS = [
+    { id: 'autolisting', name: '自动上架', badge: '⬆' },
+    { id: 'favorites', name: '网页收藏', badge: '📑' },
+    { id: 'dailyassets', name: '每日素材', badge: '📅' },
+    { id: 'creators', name: '达人库', badge: '👤' },
+    { id: 'collect', name: '素材采集', badge: '🧺' },
+  ]
+  function paintSidebar() {
+    var list = $('platList')
+    list.textContent = ''
+    platforms.forEach(function (p) {
+      var b = document.createElement('button')
+      b.className = 'plat-btn' + (currentId === p.id ? ' active' : '')
+      b.innerHTML = '<span class="plat-badge"></span><span class="plat-name"></span><span class="plat-state"></span>'
+      b.querySelector('.plat-badge').textContent = (p.name || p.id).slice(0, 1)
+      b.querySelector('.plat-name').textContent = p.name
+      var st = b.querySelector('.plat-state')
+      var n = (window.__loginCounts || {})[p.id] || 0
+      st.textContent = n > 0 ? '已登录' : '未登录'
+      b.onclick = function () { switchView('browser'); if (page) page.open({ platform: p.id }) }
+      list.appendChild(b)
+    })
+    var ext = $('extList')
+    ext.textContent = ''
+    EXT_ITEMS.forEach(function (it) {
+      var b = document.createElement('button')
+      b.className = 'plat-btn' + (activeViewName === it.id ? ' active' : '')
+      b.innerHTML = '<span class="plat-badge"></span><span class="plat-name"></span>'
+      b.querySelector('.plat-badge').textContent = it.badge
+      b.querySelector('.plat-name').textContent = it.name
+      b.onclick = function () { switchView(it.id) }
+      ext.appendChild(b)
+    })
+  }
+  function switchView(name) {
+    activeViewName = name
+    document.querySelectorAll('.view').forEach(function (v) { v.classList.toggle('active', v.id === 'view-' + name) })
+    paintSidebar()
+    sendBounds()
+  }
+
+  $('serverBtn').onclick = function () {
+    // 与 SRC 一致：打开服务端设置（shell 设置页由宿主窗口承载，这里打开系外浏览器提示位）
+    if (page) page.action({ type: 'server' })
+  }
+
+  // ── 登录态 ──
+  function refreshLogin() {
+    if (!bridge) return
+    bridge.loginStatus().then(function (st) {
+      window.__loginCounts = st.counts || {}
+      paintSidebar()
+    }).catch(function () { /* 桥不可达保持原状 */ })
+  }
+
+  // ── 下载栏 ──
+  function fmtSpeed(n) {
+    if (!n || n <= 0) return ''
+    return n > 1048576 ? (n / 1048576).toFixed(1) + ' MB/s' : Math.round(n / 1024) + ' KB/s'
+  }
+  function paintShelf() {
+    var list = Object.keys(downloads).map(function (k) { return downloads[k] })
+    var active = list.filter(function (d) { return d.state === 'downloading' || d.state === 'paused' }).length
+    var badge = $('dlBadge')
+    badge.style.display = active > 0 ? 'block' : 'none'
+    badge.textContent = String(active)
+    var el = $('shelf')
+    if (!list.length) { el.style.display = 'none'; el.textContent = ''; return }
+    el.style.display = 'flex'
+    el.textContent = ''
+    list.forEach(function (d) {
+      var row = document.createElement('div')
+      row.className = 'dl ' + d.state
+      var meta = d.state === 'downloading' ? (d.percent + '%' + (fmtSpeed(d.speed) ? ' · ' + fmtSpeed(d.speed) : ''))
+        : d.state === 'paused' ? ('已暂停 ' + d.percent + '%')
+        : d.state === 'done' ? '已完成 ✓' : '下载失败'
+      row.innerHTML = '<span class="name"></span><span class="track"><span class="fill"></span></span><span class="meta"></span>'
+      row.querySelector('.name').textContent = d.file || '下载文件'
+      row.querySelector('.fill').style.width = Math.max(0, Math.min(100, d.percent)) + '%'
+      row.querySelector('.meta').textContent = meta
+      el.appendChild(row)
+    })
+  }
+  if (bridge) {
+    bridge.onDownloadEvent({
+      progress: function (p) { downloads[p.taskId] = { file: p.file || '下载文件', percent: p.percent || 0, speed: p.speed || 0, state: p.state === 'paused' ? 'paused' : 'downloading' }; paintShelf() },
+      done: function (p) { downloads[p.taskId] = { file: p.file || '下载文件', percent: 100, state: 'done' }; paintShelf(); setTimeout(function () { delete downloads[p.taskId]; paintShelf() }, 4000) },
+      error: function (p) { downloads[p.taskId] = { file: p.file || '下载文件', percent: 0, state: 'error' }; paintShelf(); setTimeout(function () { delete downloads[p.taskId]; paintShelf() }, 4000) },
+    })
+  }
+
+  // ── bounds 同步：原生视图覆盖 #view-host ──
+  function sendBounds() {
+    if (!page) return
+    if (activeViewName !== 'browser') { page.bounds({ x: 0, y: 0, width: 0, height: 0 }); return }
+    var r = $('view-host').getBoundingClientRect()
+    page.bounds({ x: r.x, y: r.y, width: r.width, height: r.height })
+  }
+  if (window.ResizeObserver) new ResizeObserver(sendBounds).observe($('view-host'))
+  window.addEventListener('resize', sendBounds)
+
+  // ── 主进程状态推送 ──
+  if (page) page.onState(function (st) { relState = st.loading ? 'loading' : ''; paintBar(st) })
+
+  // ── 启动 ──
+  if (bridge) {
+    bridge.platforms().then(function (list) {
+      platforms = Array.isArray(list) ? list : []
+      paintSidebar()
+      refreshLogin()
+    }).catch(function () { paintSidebar() })
+  } else {
+    paintSidebar()
+  }
+  sendBounds()
+  setInterval(refreshLogin, 15000)
+})()
+</script>
+</body>
+</html>

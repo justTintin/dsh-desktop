@@ -9,14 +9,21 @@ import TButton from '@/components/common/TButton.vue'
 import { useVideoDownload } from '@/composables/useVideoDownload'
 
 const {
-  url, probing, probeError, probe, options, mediaType, downloads,
-  analyze, resetProbe, download, saveToLocal, formatDuration,
+  url, probing, probeError, probeErrorCode, probeLoginCounts, probe, options, mediaType, downloads,
+  analyze, resetProbe, openLoginBrowser, download, saveToLocal, formatDuration,
 } = useVideoDownload()
 
 const videoOptions = computed(() => options.value.filter((o) => o.mediaType === 'video'))
 const audioOptions = computed(() => options.value.filter((o) => o.mediaType === 'audio'))
 const visibleOptions = computed(() => (mediaType.value === 'audio' ? audioOptions.value : videoOptions.value))
 const hasRunning = computed(() => downloads.value.some((d) => d.state === 'running'))
+/** 已登录仍被拒（分区有登录态但平台仍要求登录）→ 引导风控口径而非重复登录 */
+const loggedInButRejected = computed(() => {
+  const counts = probeLoginCounts.value
+  if (!counts) return false
+  const n = /bilibili/i.test(url.value) ? (counts.bilibili ?? 0) : (counts.youtube ?? 0)
+  return n > 0
+})
 
 function canDownload(optionId: string): boolean {
   return !hasRunning.value && !downloads.value.some((d) => d.url === (probe.value?.webpageUrl || url.value.trim()) && d.optionId === optionId && d.state !== 'error')
@@ -44,6 +51,14 @@ function openDir(path: string | undefined): void {
         <TButton :label="probing ? '正在解析' : '解析链接'" :loading="probing" :disabled="hasRunning" @click="analyze()" />
       </div>
       <div v-if="probeError" class="error-msg">⚠ {{ probeError }}</div>
+      <!-- login_required 分流（2026-09-28 用户裁决）：未登录→一键打开内置浏览器；已登录仍被拒→风控口径 -->
+      <div v-if="probeErrorCode === 'login_required' && !loggedInButRejected" class="login-fix">
+        <span class="hint">下载走的是 TinTin 内置浏览器的登录分区，系统浏览器（Chrome/Edge）的登录它读不到。点下方按钮在内置浏览器里登录，完成后回来重新「解析链接」即可。</span>
+        <TButton label="打开内置浏览器登录" size="small" @click="openLoginBrowser()" />
+      </div>
+      <div v-else-if="probeErrorCode === 'login_required' && loggedInButRejected" class="login-fix">
+        <span class="hint">已携带登录态仍被平台要求验证：多为平台风控（IP/请求频率），可稍后重试或更换网络。</span>
+      </div>
     </section>
 
     <!-- Step1：视频信息 -->
@@ -113,6 +128,7 @@ function openDir(path: string | undefined): void {
 .grow { flex: 1 1 auto; min-width: 0; }
 .input { height: 32px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--background); color: var(--foreground); font-size: 13px; }
 .error-msg { font-size: 12px; color: var(--destructive, #e5484d); }
+.login-fix { display: flex; align-items: center; gap: var(--space-3); }
 
 .info-row { display: flex; align-items: center; gap: var(--space-3); }
 .info-thumb { width: 120px; height: 68px; object-fit: cover; border-radius: var(--radius-md); border: 1px solid var(--border); flex-shrink: 0; }

@@ -139,14 +139,15 @@ export function useCopywritingMontageStep3Voice(ctx: CopywritingMontageStep3Cont
     // TTS 引擎选择与克隆参数（2026-09-09 用户裁决：文案生成设置左边加 TTS 下拉，默认 idexttts，
     //  对齐声音克隆页裁决；duration_factor/emo_text/emo_alpha 契约同 /indextts/tts，克隆时逐条随请求发送）
     // 2026-09-20 用户裁决：默认 QwenTTS（engine=qwen3）
-    const ttsEngine = ref<'indextts' | 'qwen3' | 'voxcpm'>('qwen3')
+    // 2026-09-28 用户裁决：默认引擎 VoxCPM2（engine=voxcpm）
+    const ttsEngine = ref<'indextts' | 'qwen3' | 'voxcpm'>('voxcpm')
     const ttsDurationFactor = ref(1.0)   // 语速 0.5~2.0，默认 1.0（对齐 VoiceClone 页）
     const ttsEmoText = ref('')           // 情感文字（空=用样本默认情感）
     const ttsEmoAlpha = ref(0.5)         // 情感强度 0~1，默认 0.5
     // 句间停顿（2026-09-08 服务端新增，毫秒；0=不插标记，句间停顿由模型按标点自然处理）
     const ttsPauseMs = ref(0)
     // 2026-09-20：补 engine 字段（对齐智能混剪端；设置声音克隆对话框按引擎显示各自参数）
-    const cloneParamsDlg = ref({ show: false, factor: 1.0, emo: '', alpha: 0.5, pause: 0, engine: 'qwen3' })
+    const cloneParamsDlg = ref({ show: false, factor: 1.0, emo: '', alpha: 0.5, pause: 0, engine: 'voxcpm' })
     // Qwen3-TTS 专属设置（2026-09-20 用户裁决：设置声音克隆对话框按引擎提供各自参数）
     const qwen3Speaker = ref('')
     const qwen3Instruct = ref('')
@@ -1115,6 +1116,15 @@ function clearVoiceProgressListener(): void {
       const outWavPath = joinPath(cacheDir, 'copy-montage', 'voice', `${tab.name}_voice_${stamp}_${i + 1}.wav`)
       return { rowIdx: i, text: tab.narrative.trim(), videoPath: outWavPath, outWavPath, tabId: tab.id }
     })
+    // 2026-09-28 [object Object] 事故防回归：输出路径必须是绝对路径——旧热部署
+    // host 的 env:cacheDir 曾返回对象（String 化成 '[object Object]' 当目录用），
+    // 相对坏路径会让主进程把文件写进 launch-root 并在剪映里全部缺媒体
+    for (const t of tasks) {
+      if (!/^[A-Za-z]:[\\/]/.test(t.outWavPath)) {
+        notify('路径异常', '缓存目录解析异常（' + t.outWavPath.slice(0, 60) + '）。请重启应用后重试；反复出现请检查通用设置·本地缓存目录。')
+        return
+      }
+    }
     voiceBusy.value = true
     voiceTotal = tasks.length; voiceDone = 0; voiceProgress.value = 0
     const channel = nextVoiceChannel()

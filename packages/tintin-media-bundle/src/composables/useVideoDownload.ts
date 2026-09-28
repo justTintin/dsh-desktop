@@ -4,6 +4,8 @@
 // 白名单/档位/错误分类在宿主 lib/ytdlp-logic.js（策略）+ lib/ytdlp.js（I/O）。
 // 进度事件不落桥（polyfill onProgress 为 no-op 退订）：条目停在提交态直到终态。
 // 错误文案逐字对照 OpenCreator VideoDownloadWorkspace formatDownloadError。
+// 有意偏离（2026-09-28 用户裁决）：登录态在 probe/download 前由宿主自动同步（免手动
+// 导出）；login_required 提供一键打开内置浏览器登录，不再以"无法下载"死路收尾。
 // ═══════════════════════════════════════════════════════════════
 import { ref } from 'vue'
 // ── 参考视频下载（OpenCreator download 架构移植，2026-09-07）──
@@ -72,6 +74,9 @@ export function useVideoDownload() {
   const url = ref('')
   const probing = ref(false)
   const probeError = ref('')
+  /** probe 失败码 + 登录态条数（login_required 时渲染层据此区分未登录/已登录仍被拒并给一键登录） */
+  const probeErrorCode = ref('')
+  const probeLoginCounts = ref<Record<string, number> | null>(null)
   const probe = ref<YtdlpProbeInfo | null>(null)
   const options = ref<YtdlpOption[]>([])
   const mediaType = ref<'video' | 'audio'>('video')
@@ -85,12 +90,17 @@ export function useVideoDownload() {
     if (!target) { probeError.value = '请输入有效的 YouTube 或 Bilibili 公公开视频链接'; return }
     probing.value = true
     probeError.value = ''
+    probeErrorCode.value = ''
+    probeLoginCounts.value = null
     probe.value = null
     options.value = []
     try {
+      // 宿主在 probe 前已自动同步壳层登录态（2026-09-28 用户裁决，免手动导出）
       const res = await window.tintin.ytdlp.probe({ url: target })
       if (res.error || !res.probe) {
         probeError.value = res.error || '解析失败，请稍后重试'
+        probeErrorCode.value = res.code || ''
+        probeLoginCounts.value = res.loginCounts ?? null
         return
       }
       probe.value = res.probe
@@ -107,6 +117,18 @@ export function useVideoDownload() {
     probe.value = null
     options.value = []
     probeError.value = ''
+    probeErrorCode.value = ''
+    probeLoginCounts.value = null
+  }
+
+  /** URL → 登录平台（引导打开内置浏览器用；白名单外的兜底 youtube） */
+  function loginPlatformOf(target: string): 'youtube' | 'bilibili' {
+    return /youtube\.com|youtu\.be/i.test(target) ? 'youtube' : 'bilibili'
+  }
+
+  /** 一键打开内置浏览器登录（经壳层回环拉起独立浏览器窗口） */
+  async function openLoginBrowser(): Promise<void> {
+    await window.tintin.ytdlp.openLoginBrowser({ platform: loginPlatformOf(url.value.trim()) })
   }
 
   /** 下载指定档位（同档位去重：同 URL 同 option 运行中/已完成不重复提交） */
@@ -165,7 +187,7 @@ export function useVideoDownload() {
   }
 
   return {
-    url, probing, probeError, probe, options, mediaType, downloads,
-    analyze, resetProbe, download, saveToLocal, formatDuration,
+    url, probing, probeError, probeErrorCode, probeLoginCounts, probe, options, mediaType, downloads,
+    analyze, resetProbe, openLoginBrowser, download, saveToLocal, formatDuration,
   }
 }

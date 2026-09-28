@@ -10,13 +10,11 @@ const tintinClient = (() => {
     // 覆盖层：工作台=harness 会话原生视图；运营/媒体=覆盖层内由视图提供方
     // （window.__tintinViews 注册，media-bundle 挂 Vue 子应用）渲染。
     function installTintinChrome() {
-      if (document.getElementById('tintin-top-tabs')) return
-      const BAR_H = '38px'
+      if (document.querySelector('[data-tintin-entry]')) return
+      // 入口视图（工作台=无覆盖层默认态；浏览器=独立窗口入口，不进覆盖层）
       const VIEWS = [
-        { id: 'workbench', label: '工作台' },
         { id: 'ops', label: '运营工具' },
         { id: 'media', label: '媒体工具' },
-        { id: 'browser', label: '浏览器' },
       ]
       const providers = new Map()
       let activeId = 'workbench'
@@ -33,13 +31,106 @@ const tintinClient = (() => {
         unregister(id) { providers.delete(id) },
       }
 
-      const bar = document.createElement('div')
-      bar.id = 'tintin-top-tabs'
-      bar.setAttribute('role', 'tablist')
-      bar.style.cssText =
-        `position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:9999;` +
-        `display:flex;gap:2px;align-items:flex-end;height:${BAR_H};padding:0 6px;`
-      document.body.appendChild(bar)
+      // ── 左侧「插件」区入口（2026-09-28 用户裁决：撤顶部 Tab 栏，减少对原版
+      // 布局的破坏；入口行克隆 harness 面板行位置注入，切换沿用覆盖层 KeepAlive）──
+      let entryButtons = []
+      function paintEntries() {
+        // 激活态沿用原生 panelActive 类：面板未激活时行上没有该类，改由同模块
+        // 前缀推导（panelRow → panelActive，CSS modules 同文件同前缀）
+        const row = [...document.querySelectorAll('button')].find(
+          (b) => b.textContent.trim() === '插件' && b.closest('[data-dsh-sidebar-root]'),
+        )
+        let activeCls = null
+        if (row) {
+          const rowCls = [...row.classList].find((c) => c.endsWith('panelRow'))
+          if (rowCls) activeCls = rowCls.replace(/panelRow$/, 'panelActive')
+        }
+        for (const [id, b] of entryButtons) {
+          if (activeCls) b.classList.toggle(activeCls, activeId === id)
+        }
+      }
+      function setActive(id) { activeId = id; render() }
+      function injectEntries() {
+        const row = [...document.querySelectorAll('button')].find(
+          (b) => b.textContent.trim() === '插件' && b.closest('[data-dsh-sidebar-root]'),
+        )
+        if (!row) return false
+        const host = row.parentElement
+        if (!host || host.querySelector('[data-tintin-entry]')) return true
+        // 入口行 = 克隆「插件」面板行节点并与原行同层直插（2026-09-28 用户裁决：
+        // 布局/图标/字体/行距与插件区逐像素一致，激活背景为整行；收起态跟随原生
+        // 组件行为）。克隆体只改标题文本与点击行为，激活态复用原生 panelActive 类。
+        const items = [...VIEWS, { id: '__browser', label: '浏览器' }]
+        let anchor = row
+        for (const v of items) {
+          const b = row.cloneNode(true)
+          b.type = 'button'
+          b.removeAttribute('id')
+          b.removeAttribute('aria-keyshortcuts')
+          b.removeAttribute('aria-label')
+          b.setAttribute('data-tintin-entry', v.id)
+          const title = [...b.querySelectorAll('span,div')].find((e) => e.childElementCount === 0 && e.textContent.trim() === '插件')
+          if (title) title.textContent = v.label
+          else b.textContent = v.label
+          // 图标：语义参考原版 Electron（媒体/运营/浏览器），风格对齐 DSH 侧栏
+          // 16×16 线稿（stroke currentColor / 线宽 1，与 panelGlyph 原生规格一致）
+          const GLYPHS = {
+            media: '<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M6.8 5.9v4.2l3.6-2.1z"/>',
+            ops: '<rect x="2" y="5.5" width="12" height="8" rx="1.5"/><path d="M6 5.5V4a1.5 1.5 0 0 1 1.5-1.5h1A1.5 1.5 0 0 1 10 4v1.5"/><path d="M2 8.5h12"/>',
+            __browser: '<circle cx="8" cy="8" r="6"/><path d="M2 8h12"/><path d="M8 2c-1.8 1.6-2.8 3.7-2.8 6s1 4.4 2.8 6c1.8-1.6 2.8-3.7 2.8-6S9.8 3.6 8 2z"/>',
+          }
+          const glyphSvg = b.querySelector('[class*=panelGlyph] svg')
+          if (glyphSvg && GLYPHS[v.id]) {
+            glyphSvg.setAttribute('viewBox', '0 0 16 16')
+            glyphSvg.setAttribute('width', '16')
+            glyphSvg.setAttribute('height', '16')
+            glyphSvg.setAttribute('fill', 'none')
+            glyphSvg.setAttribute('stroke', 'currentColor')
+            glyphSvg.setAttribute('stroke-width', '1')
+            glyphSvg.innerHTML = GLYPHS[v.id]
+          }
+          b.onclick = (ev) => {
+            ev.stopPropagation()
+            if (v.id === '__browser') {
+              const br = window.dshDesktopBrowser
+              if (br) void br.open('web').catch(() => {})
+              return
+            }
+            setActive(activeId === v.id ? 'workbench' : v.id)
+          }
+          if (v.id !== '__browser') entryButtons.push([v.id, b])
+          anchor.insertAdjacentElement('afterend', b)
+          anchor = b
+        }
+        return true
+      }
+      // 侧栏由 React 管理（类名带 hash、会重渲染）：MutationObserver 守住注入；
+      // 点侧栏其他区域（会话/新会话）= 回工作台，与原版主区语义一致。
+      const sidebarMo = new MutationObserver(() => {
+        if (!injectEntries()) return
+        const root = document.querySelector('[data-dsh-sidebar-root]')
+        if (root && !root.__tintinWired) {
+          root.__tintinWired = true
+          root.addEventListener(
+            'click',
+            (ev) => {
+              const t = ev.target
+              if (t instanceof Element && t.closest('[data-tintin-entry]')) return
+              const row = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === '插件')
+              if (row && t instanceof Element && (t === row || row.contains(t))) return
+              if (activeId !== 'workbench') setActive('workbench')
+            },
+            true,
+          )
+        }
+      })
+      const armSidebarObserver = () => {
+        const col = document.querySelector('[class*=sidebarCol]') || document.body
+        sidebarMo.observe(col, { childList: true, subtree: true })
+        injectEntries()
+      }
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', armSidebarObserver)
+      else armSidebarObserver()
 
       // 动画层（2026-09-25 用户报障「整个客户端缺少原客户端动画效果」）：
       // ①tab 切换视图入场（slide-up，SRC MediaTools/OpsTools 页面过渡口径 0.2s/12px）
@@ -75,12 +166,23 @@ const tintinClient = (() => {
       const overlay = document.createElement('div')
       overlay.id = 'tintin-view-overlay'
       overlay.style.cssText =
-        `position:fixed;inset:${BAR_H} 0 0 0;z-index:9998;display:none;` +
+        `position:fixed;inset:0;z-index:9998;display:none;` +
         `background:var(--dsw-alias-bg-layer-1,#141416);` +
         `color:var(--dsw-alias-label-primary,#e8e8e6);overflow:auto;`
       const container = document.createElement('div')
       container.style.cssText = 'width:100%;min-height:100%;box-sizing:border-box;'
       overlay.appendChild(container)
+      // 左栏固定常驻（2026-09-28 用户裁决）：覆盖层只占侧栏右侧显示区，
+      // 偏移随侧栏宽度（展开 280px/收起窄栏）实时同步，不再整窗覆盖。
+      function syncOverlayBounds() {
+        const root = document.querySelector('[data-dsh-sidebar-root]')
+        const w = root ? root.getBoundingClientRect().width : 0
+        overlay.style.left = Math.round(w) + 'px'
+      }
+      try {
+        const col = document.querySelector('[class*=sidebarCol]') || document.body
+        new ResizeObserver(() => syncOverlayBounds()).observe(col)
+      } catch { /* 无 ResizeObserver 时保持整窗 */ }
       document.body.appendChild(overlay)
 
       function mountActive() {
@@ -178,12 +280,9 @@ const tintinClient = (() => {
         el.appendChild(root)
       }
 
-      // ── 浏览器 tab 面板（2026-09-25 用户裁决：独立窗口形态）────────────────
-      // 登录态管理：每平台一张卡（cookie 条数=登录状态 + 「打开」按钮）+
-      // 「导出登录态」。独立浏览器窗口内导航到平台 seed URL（分区 persist:tintin-<id>
-      // 隔离登录态）；cookies 由壳层导出到 <userData>/harness/tintin/browser/cookies/
-      // （Netscape），供宿主 ytdlp 门 --cookies 消费（参考视频下载的登录态来源）。
-      // 平台表数据源 = 壳侧 browser:platforms（platform-meta 单一权威）。
+      // ── 浏览器 tab 面板（2026-09-28 用户裁决：浏览器整体按原客户端形态在独立窗口
+      // 实现；登录态自动同步——cookie 变化即落盘、下载前自动核验，无手动导出）──
+      // 平台卡片=入口（打开独立浏览器窗口/抽取当前页）；引擎在 src/main/tintin/browser/。
       function renderBrowserPanel(el) {
         const bridge = window.dshDesktopBrowser
         let platforms = []
@@ -193,30 +292,13 @@ const tintinClient = (() => {
         const head = document.createElement('div')
         head.style.cssText = 'margin-bottom:16px;'
         head.innerHTML = '<div style="font-size:24px;font-weight:700;color:var(--dsw-alias-label-primary,#e8e8e6)">浏览器</div>' +
-          '<div style="font-size:13px;color:var(--dsw-alias-label-tertiary,#8b8b88);margin-top:4px">平台登录态（独立浏览器窗口 · 各平台独立分区）——登录后点「导出登录态」，参考视频下载即可用登录信息下载</div>'
+          '<div style="font-size:13px;color:var(--dsw-alias-label-tertiary,#8b8b88);margin-top:4px">平台登录态（独立浏览器窗口 · 各平台独立分区）——点平台卡「打开浏览器」，在窗口内登录即自动同步，参考视频下载直接可用</div>'
         root.appendChild(head)
 
-        const cookieRow = document.createElement('div')
-        cookieRow.style.cssText = 'display:flex;gap:10px;align-items:flex-start;margin-bottom:16px;'
-        const cookieBtn = document.createElement('button')
-        cookieBtn.type = 'button'
-        cookieBtn.textContent = '导出登录态'
-        cookieBtn.style.cssText = 'height:32px;padding:0 16px;border-radius:8px;border:none;background:#4f7cff;color:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;flex-shrink:0;'
-        const cookieInfo = document.createElement('span')
-        cookieInfo.style.cssText = 'font-size:12px;color:var(--dsw-alias-label-tertiary,#8b8b88);word-break:break-all;align-self:center;'
-        cookieBtn.onclick = async () => {
-          if (!bridge) { cookieInfo.textContent = '桌面桥不可用（需完整壳）'; return }
-          cookieInfo.textContent = '导出中…'
-          try {
-            const counts = await bridge.exportCookies()
-            const st = await bridge.loginStatus()
-            const parts = Object.entries(counts).filter(([, n]) => n > 0).map(([p, n]) => `${p}:${n}`).join('  ')
-            cookieInfo.textContent = `已导出 → ${parts || '（各平台均未登录）'}\n目录：${st.cookiesDir}`
-          } catch (e) { cookieInfo.textContent = `导出失败：${(e && e.message) || e}` }
-        }
-        cookieRow.appendChild(cookieBtn)
-        cookieRow.appendChild(cookieInfo)
-        root.appendChild(cookieRow)
+        // 面板状态行（桥缺失/失败提示；登录态本身自动同步，不再有手动导出入口）
+        const panelStatus = document.createElement('div')
+        panelStatus.style.cssText = 'font-size:12px;color:var(--dsw-alias-label-tertiary,#8b8b88);margin-bottom:16px;white-space:pre-wrap;word-break:break-all;'
+        root.appendChild(panelStatus)
 
         // 抖店工作台入口（fxg 分区不进平台组——SRC 同；自动上架载体，2026-09-25）
         const fxgRow = document.createElement('div')
@@ -243,34 +325,6 @@ const tintinClient = (() => {
         extractBox.appendChild(extractTitle)
         extractBox.appendChild(extractBody)
         root.appendChild(extractBox)
-
-        function showExtractResult(platformName, result) {
-          extractBox.style.display = 'block'
-          if (result && result.ok) {
-            extractTitle.textContent = `${platformName} · 抽取成功`
-            let data = result.data
-            try { data = JSON.stringify(data, null, 2) } catch { /* 原样展示 */ }
-            extractBody.textContent = String(data).slice(0, 4000)
-          } else {
-            const err = (result && result.error) || {}
-            extractTitle.textContent = `${platformName} · 抽取失败（${err.type || '?'}）`
-            extractBody.textContent = `${err.message || '抽取失败'}${err.hint ? '\n提示：' + err.hint : ''}`
-          }
-        }
-
-        async function extractPlatform(p) {
-          if (!bridge) { extractBox.style.display = 'block'; extractTitle.textContent = '抽取失败'; extractBody.textContent = '桌面桥不可用（需完整壳）'; return }
-          extractBox.style.display = 'block'
-          extractTitle.textContent = `${p.name} · 抽取中…`
-          extractBody.textContent = '打开独立浏览器窗口并解析当前页面…'
-          try {
-            // 先开窗口（未打开时抽取报 NOT_ATTACHED），再抽取
-            const open = await bridge.open(p.id)
-            if (!(open && open.ok)) { showExtractResult(p.name, { ok: false, error: { type: 'NOT_ATTACHED', message: '打开浏览器窗口失败', hint: (open && open.error) || '' } }); return }
-            const result = await bridge.extractDOM(p.id)
-            showExtractResult(p.name, result)
-          } catch (e) { showExtractResult(p.name, { ok: false, error: { type: 'EXTRACTOR_ERROR', message: String((e && e.message) || e) } }) }
-        }
 
         const grid = document.createElement('div')
         grid.style.cssText = 'display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));'
@@ -410,7 +464,7 @@ const tintinClient = (() => {
 
         el.appendChild(root)
         if (!bridge) {
-          cookieInfo.textContent = '桌面桥不可用（需完整壳，纯浏览器预览无此能力）'
+          panelStatus.textContent = '桌面桥不可用（需完整壳，纯浏览器预览无此能力）'
           return
         }
         void bridge.platforms().then(async (list) => {
@@ -437,8 +491,8 @@ const tintinClient = (() => {
               try {
                 const r = await bridge.open(p.id)
                 openBtn.textContent = r && r.ok ? '已打开 ✓' : '打开失败'
-                if (!(r && r.ok)) cookieInfo.textContent = `打开失败：${(r && r.error) || '?'}`
-              } catch (e) { openBtn.textContent = '打开失败'; cookieInfo.textContent = `打开失败：${(e && e.message) || e}` }
+                if (!(r && r.ok)) panelStatus.textContent = `打开失败：${(r && r.error) || '?'}`
+              } catch (e) { openBtn.textContent = '打开失败'; panelStatus.textContent = `打开失败：${(e && e.message) || e}` }
               setTimeout(() => { openBtn.disabled = false; openBtn.textContent = '打开浏览器' }, 2000)
             }
             card.appendChild(title)
@@ -470,33 +524,16 @@ const tintinClient = (() => {
           bridge.onExtensionsChanged((payload) => { renderExtensions(payload.extensions) })
           void refreshRecords()
           void refreshRecords()
-        }).catch(() => { cookieInfo.textContent = '平台表加载失败（需完整壳）' })
+        }).catch(() => { panelStatus.textContent = '平台表加载失败（需完整壳）' })
       }
 
       function render() {
-        for (const b of Array.from(bar.querySelectorAll('button'))) {
-          const on = b.dataset.view === activeId
-          b.style.background = on ? 'var(--dsw-alias-bg-layer-2,#1e1e20)' : 'transparent'
-          b.style.color = on ? 'var(--dsw-alias-label-primary,#e8e8e6)' : 'var(--dsw-alias-label-tertiary,#8b8b88)'
-          b.style.borderBottom = on ? '2px solid var(--dsw-alias-brand-primary,#4f7cff)' : '2px solid transparent'
-          b.setAttribute('aria-selected', String(on))
-        }
+        paintEntries()
+        syncOverlayBounds()
         mountActive()
       }
 
-      for (const v of VIEWS) {
-        const btn = document.createElement('button')
-        btn.type = 'button'
-        btn.role = 'tab'
-        btn.dataset.view = v.id
-        btn.textContent = v.label
-        btn.style.cssText =
-          'appearance:none;font:inherit;font-size:13px;line-height:1;cursor:pointer;' +
-          'padding:9px 16px;border:0;background:transparent;' +
-          'transition:background .15s,color .15s,border-color .15s;'
-        btn.onclick = () => { activeId = v.id; render() }
-        bar.appendChild(btn)
-      }
+      injectEntries()
       render()
     }
 
@@ -1016,6 +1053,8 @@ const tintinClient = (() => {
         probe: (payload) => call('ytdlp:probe', { args: [payload] }),
         download: (payload) => call('ytdlp:download', { args: [payload] }),
         saveAs: (payload) => call('ytdlp:saveAs', { args: [payload] }),
+        // 未登录引导（2026-09-28 用户裁决）：login_required 时一键经壳层回环打开内置浏览器
+        openLoginBrowser: (payload) => call('ytdlp:openLoginBrowser', { args: [payload] }),
         onProgress: () => () => {},
       })
 
