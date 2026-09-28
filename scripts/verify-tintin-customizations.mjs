@@ -69,8 +69,7 @@ chkGE('1.8', '自愈 store 兜底（readStoreServerUrl）', 'src/main/tintin-fir
 // ── 2. 壳层 main 进程 ────────────────────────────────────────────────────────
 chkGE('2.1', '退出连树杀', 'src/main/runtime/harness-runtime.ts', 'killWindowsProcessTree', 3)
 chkGE('2.2', 'pid 契约 getter', 'src/main/runtime/disclaimed-utility-process.ts', 'get pid', 1)
-if (existsSync(join(root, 'src/main/tintin/browser/platform-meta.ts'))) pass++
-else failures.push('2.3 浏览器域壳层 — src/main/tintin/browser/platform-meta.ts 不存在')
+chkGE('2.3', '浏览器域壳层', 'src/main/tintin/browser/platform-meta.ts', '.', 1)
 
 // ── 3. tintin-bundle 插件 ───────────────────────────────────────────────────
 chkGE('3.1', '工具注册隔离 registerTool', 'packages/tintin-bundle/index.js', 'registerTool\\(\\{', 4)
