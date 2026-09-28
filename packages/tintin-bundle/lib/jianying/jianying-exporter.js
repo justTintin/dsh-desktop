@@ -1479,17 +1479,36 @@ function exportMultiToDraft({ videoPaths, videoDurations = null, muteVideoAudio 
     // 存在性校验，缺失清单随结果返回——渲染层显性提示，不再静默"导出正常"。
     // 草稿照写（剪映内链接媒体可补救）；path 形态异常（如含 "[object Object]"）
     // 一并计入缺失并原样回传，供上游定位注入点。
+    // 2026-09-28 导出完整性校验升级（用户裁决：判定检验**所有媒体**）：
+    // ①全素材 path 存在性（materials 全类逐条）；②轨道引用一致性——每个 segment
+    // 的 material_id 必须解析到素材且文件真实存在，被轨道引用而缺失的一律报出。
     const missingMedia = []
     {
+      const matById = new Map()
       const seenPaths = new Set()
-      for (const list of Object.values(content.materials || {})) {
+      for (const [cat, list] of Object.entries(content.materials || {})) {
         if (!Array.isArray(list)) continue
         for (const m of list) {
-          const p = typeof m?.path === 'string' ? m.path : ''
-          if (!p || seenPaths.has(p)) continue
+          if (!m?.id) continue
+          const p = typeof m.path === 'string' ? m.path : ''
+          matById.set(m.id, m)
+          if (seenPaths.has(p)) continue
           seenPaths.add(p)
-          if (!fs.existsSync(p)) missingMedia.push({ name: m.material_name || '', path: p })
+          if (!p || !fs.existsSync(p)) missingMedia.push({ name: m.material_name || cat, path: p || '(path 非字符串/缺失)' })
         }
+      }
+      // 轨道引用一致性：material_id 失联 = 轨道上的段没有可用素材（比 path 缺失更致命）
+      let brokenRefs = 0
+      for (const track of content.tracks || []) {
+        for (const seg of track.segments || []) {
+          if (!seg?.material_id || matById.has(seg.material_id)) continue
+          brokenRefs++
+          missingMedia.push({ name: `未挂载素材段（${track.type || '未知'}轨）`, path: `material_id ${seg.material_id} 未在素材库中找到` })
+        }
+      }
+      if (brokenRefs > 0 && missingMedia.some((x) => String(x.path).includes('object Object'))) {
+        // 2026-09-28 实录："[object Object]" 路径条目本身可解析（素材在册），
+        // 但文件不存在——上面 ① 已报；此处不加重复行。
       }
     }
     // bgmIncluded：BGM 轨是否实际生成（未选/文件不存在时为 false，渲染层据实提示）
