@@ -27,14 +27,16 @@ export function createServerUrlResolver({ readConfig, readTintinStore, readAiCon
     if (typeof readConfig === 'function') {
       try {
         const u = readConfig('server.url')
-        if (u) return String(u).replace(/\/$/, '')
+        // 非字符串档值（如 schemastery 对 volatile 字段的空对象占位）一律跳过，
+        // 否则 String(value) 会把 "[object Object]" 送进 URL 解析（实测事故）。
+        if (typeof u === 'string' && u) return u.replace(/\/$/, '')
       } catch { /* fall through */ }
     }
     if (typeof readTintinStore === 'function') {
       try {
         const store = readTintinStore()
         const u = store && store.server && store.server.url
-        if (u) return String(u).replace(/\/$/, '')
+        if (typeof u === 'string' && u) return u.replace(/\/$/, '')
       } catch { /* fall through */ }
     }
     if (typeof readAiConfig === 'function') {

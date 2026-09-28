@@ -310,7 +310,13 @@ export async function apply(ctx, config) {
     ? () => { try { return existsSync(aiConfigPath) ? JSON.parse(readFileSync(aiConfigPath, 'utf8')) : null } catch { return null } }
     : null
   const getServerUrl = createServerUrlResolver({
-    readConfig: (key) => key === 'server.url' ? config?.server?.url : undefined,
+    // 类型守卫：schemastery 对 volatile 字段缺值时可能编译出空对象占位，
+    // 真值判断会放行 "[object Object]" 进解析链（2026-09-28 实测 Invalid URL 根因）。
+    readConfig: (key) => {
+      if (key !== 'server.url') return undefined
+      const v = config?.server?.url
+      return typeof v === 'string' && v.length > 0 ? v : undefined
+    },
     readTintinStore: () => readTintinConfigStore(process.env.DSH_HOME),
     readAiConfig,
   })
@@ -523,10 +529,10 @@ export async function apply(ctx, config) {
     // 首启向导的持久化一律走这里（<DSH_HOME>/tintin/config.json）；桥接解析链
     // 第二档即时读到，无需等 fiber 重启。get 返回合并视图（自有存储 ∪ profile
     // config，后者优先）——与 server-proxy 解析链同序，任一层重设都算已配置。
-    'config:store:get': () => ({
+    'config:get': () => ({
       value: mergeConfigDocs(readTintinConfigStore(process.env.DSH_HOME) ?? {}, config ?? {}),
     }),
-    'config:store:merge': (args) => {
+    'config:merge': (args) => {
       const patch = args?.[0]
       if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return { error: 'config:store:merge requires an object patch' }
       try {

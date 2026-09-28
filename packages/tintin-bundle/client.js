@@ -1114,14 +1114,14 @@ window.__ModuleLoader__.load({
         // 读自有存储合并视图（0.1.7 起本插件条目配置设置服务拒写，持久化在
         // <DSH_HOME>/tintin/config.json；settings/describe 读 profile 层不再是
         // 权威源）。
-        window.tintin?.config?.storeGet?.().then((res) => {
+        window.tintin?.config?.get?.().then((res) => {
           setUrl(String(res?.value?.server?.url ?? ''))
           setState('ready')
         }).catch((e) => { setError(String(e?.message ?? e)); setState('error') })
       }, [])
       const save = () => {
         setState('saving'); setError('')
-        window.tintin?.config?.storeMerge?.({ server: { url: url.replace(/\/$/u, '') } })
+        window.tintin?.config?.merge?.({ server: { url: url.replace(/\/$/u, '') } })
           .then(() => setState('saved'))
           .catch((e) => { setError(String(e?.message ?? e)); setState('error') })
       }
@@ -1182,7 +1182,7 @@ window.__ModuleLoader__.load({
         try {
           const d = await picker.pick('选择本地缓存目录')
           if (!d) return // 取消
-          await window.tintin?.config?.storeMerge?.({ local: { cacheDir: String(d) } })
+          await window.tintin?.config?.merge?.({ local: { cacheDir: String(d) } })
           setCacheDir(String(d))
           setPickHint('缓存目录已保存')
         } catch (e) {
@@ -1270,7 +1270,7 @@ async function maybeShowSetupWizard() {
   let value
   for (let i = 0; i < 10 && value === undefined; i++) {
     try {
-      const res = await window.tintin?.config?.storeGet?.()
+      const res = await window.tintin?.config?.get?.()
       value = res?.value
     } catch { /* retry */ }
     if (value === undefined) await new Promise((r) => setTimeout(r, 1500))
@@ -1309,7 +1309,7 @@ async function maybeShowSetupWizard() {
     // TinTin 自有段写自有存储（设置服务拒写宿主插件条目）；provider 与默认
     // 模型是 profile 层条目（llm-pi-ai / agent-default-model），设置服务可写，
     // 仍走 settings/mutate。
-    await window.tintin?.config?.storeMerge?.({ server: { url, provisioned: true } })
+    await window.tintin?.config?.merge?.({ server: { url, provisioned: true } })
     await tintinClient.settingsRpc('settings/mutate', {
       ns: 'llm-pi-ai',
       ops: [{
@@ -1326,7 +1326,7 @@ async function maybeShowSetupWizard() {
   }
 
   skip.onclick = async () => {
-    try { await window.tintin?.config?.storeMerge?.({ server: { provisioned: true } }) } catch { /* keep default */ }
+    try { await window.tintin?.config?.merge?.({ server: { provisioned: true } }) } catch { /* keep default */ }
     el.remove()
   }
   go.onclick = async () => {
