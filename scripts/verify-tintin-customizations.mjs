@@ -124,6 +124,8 @@ chkGE('6.2', 'dsh 补丁：tintin-bundle 依赖注入', 'patches/@deepseek-ai+ds
 chkGE('6.2b', 'dsh 补丁：tintin-media-bundle 依赖注入', 'patches/@deepseek-ai+dsh+0.1.7-rc.2.patch', '\\+    "tintin-media-bundle": "0\\.1\\.0"', 1)
 chkGE('6.3', 'cordis loader 补丁（DSH_LOADER_TIMEOUT_MS）', 'patches/@deepseek-ai+cordis-plugin-loader+1.0.5.patch', 'DSH_LOADER_TIMEOUT_MS', 1)
 chkGE('6.4', 'host patch 组合含 tintin 插件', 'build/dsh-desktop.patch.yml', 'tintin-bundle', 1)
+chkGE('6.5', 'host patch 默认 preset 指向 0.1.7 registry id（agent-preset-registry）', 'build/dsh-desktop.patch.yml', 'agent-preset-registry', 1)
+chkZero('6.5b', '0.1.5 旧 registry id 归零（agent-presets not found 警告源）', 'build/dsh-desktop.patch.yml', '- id: agent-presets')
 
 // ── 7. 补丁版本对账（patches/ 每个文件 vs package-lock 实际版本）─────────────
 try {

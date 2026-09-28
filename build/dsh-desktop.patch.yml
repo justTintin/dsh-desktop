@@ -59,7 +59,9 @@
 # after dsh-web-app's insert, so the whole-config restatement switches the
 # default away from `standard`; schema defaults cover the root flags. The
 # role presets themselves sync to $DSH_HOME/.agent-presets from tintin-bundle.
-- id: agent-presets
+# 0.1.7: the registry entry id is `agent-preset-registry` (the 0.1.5 id
+# `agent-presets` no longer exists — "patch: entry not found" warning).
+- id: agent-preset-registry
   config:
     default: tintin-assistant
 
