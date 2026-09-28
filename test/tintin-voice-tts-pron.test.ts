@@ -7,6 +7,14 @@ import {
   preprocessTtsText,
 } from '../packages/tintin-bundle/lib/montage/voice-tts-logic.js'
 
+describe('tts 品牌读音词典（免标注自动读对）', () => {
+  it('Blue VO!CE 无标注也读对（2026-09-28 用户实机文案原样）', () => {
+    expect(preprocessTtsText('Blue VO!CE降噪一开')).toBe('Blue Voice降噪一开')
+    // 词典已替换 VO!CE 时，同形标注括号消费后读法仍正确（双写不叠加错误）
+    expect(preprocessTtsText('Blue VO!CE(blue voice)')).toBe('Blue blue voice')
+  })
+})
+
 describe('tts 读音标注（preprocessTtsText 第 0 步）', () => {
   it('标注括号内的字母串允许内嵌 !（品牌营销拼写）', () => {
     expect(preprocessTtsText('VO!CE(blue voice)')).toBe('blue voice')
@@ -22,8 +30,10 @@ describe('tts 读音标注（preprocessTtsText 第 0 步）', () => {
 
   it('既有口径不回归：数字读法与逐字母拆分', () => {
     expect(preprocessTtsText('555(三五)电池')).toBe('三五电池')
-    // 无标注的全大写缩写仍逐字母拆分（含被 ! 切断的段）
-    expect(preprocessTtsText('Blue VO!CE')).toBe('Blue V O!C E')
+    // 词典内的品牌拼写无标注也读对（2026-09-28 需求：免标注自动读对）
+    expect(preprocessTtsText('Blue VO!CE')).toBe('Blue Voice')
+    // 词典外的怪拼写仍逐字母拆分（读音标注括号是这类词的正路）
+    expect(preprocessTtsText('XQ!AB')).toBe('X Q!A B')
   })
 
   it('普通感叹句无标注括号时不受影响', () => {

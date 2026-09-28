@@ -74,8 +74,21 @@ function preprocessTtsKeepingPause(text) {
     .join('')
 }
 
+// ── 品牌读音词典（2026-09-28 用户需求：营销拼写自动读对，免手写标注）────────
+// 归一化管道第 -1 步：命中即整词替换为 TTS 可读形式。克隆只学音色不学发音，
+// 参考样本救不了文本读法——怪拼写的正确读音必须在这里（或文案标注括号）给出。
+// 新品牌往 BRAND_PRONUNCIATIONS 追一条即可（[原文正则, 读法]，全文案生效）。
+const BRAND_PRONUNCIATIONS = [
+  [/\bBlue VO!CE\b/g, 'Blue Voice'], // 罗技 G PRO X 2 麦克风降噪功能名（VO!CE 为营销拼写，读 voice）
+]
+
+function applyBrandPronunciations(t) {
+  for (const [re, reading] of BRAND_PRONUNCIATIONS) t = t.replace(re, reading)
+  return t
+}
+
 function preprocessTtsText(text) {
-  let t = String(text ?? '')
+  let t = applyBrandPronunciations(String(text ?? ''))
   // 0. 读音标注（voice_workers.py 2026-09-07 新增第 0 步，PR#4 条目9）：
   //    数字/字母串(中文读音) → 整体替换为读法，在数字转中文之前。
   //    例：「555(三五)电池」→ TTS 读「三五电池」；字幕/花字侧由
