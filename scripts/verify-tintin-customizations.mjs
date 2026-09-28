@@ -114,6 +114,7 @@ if (teleportNew === 14 && teleportOld === 0) pass++
 else failures.push(`4.7 弹层形态 — 新形态 ${teleportNew}/14，旧形态残留 ${teleportOld}`)
 chkGE('4.7c', 'mask 层级 12000 规则', 'packages/tintin-media-bundle/src/styles/tintin-global.css', 'body > \\.tintin-modal-layer \\.modal-mask \\{ z-index: 12000', 1)
 chkGE('4.7d', '容器 display:contents（不占流）', 'packages/tintin-media-bundle/src/styles/tintin-global.css', '\\.tintin-modal-layer \\{ display: contents; \\}', 1)
+chkGE('4.7e', '连接测试注入锚双文案兼容（0.1.7「添加模型提供商」事故锚点）', 'packages/tintin-bundle/client.js', '添加模型提供商', 1)
 
 // ── 5. 打包器 ────────────────────────────────────────────────────────────────
 chkGE('5.1', '清扫宏 customCheckAppRunning', 'build/installer.nsh', 'customCheckAppRunning', 2)

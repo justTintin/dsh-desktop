@@ -619,8 +619,13 @@ const tintinClient = (() => {
         }, 200)
       })
       function ensurePanel() {
+        // 锚点双文案：0.1.5 按钮「添加提供方」，0.1.7 改版为「添加模型提供商」
+        // （2026-09-28 实机事故：单文案锚点在 0.1.7 下永失配，面板不再注入）。
         const anchor = [...document.querySelectorAll('button')]
-          .find((b) => b.textContent?.trim() === '添加提供方')
+          .find((b) => {
+            const t = b.textContent?.trim() ?? ''
+            return t === '添加提供方' || t.includes('添加模型提供商') || t === '添加提供商'
+          })
         if (!anchor) return
         const row = anchor.parentElement
         const host = row?.parentElement
