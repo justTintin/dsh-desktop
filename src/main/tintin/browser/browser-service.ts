@@ -183,6 +183,17 @@ function attachToWindow(): void {
   const size = win.getContentSize()
   view.setBounds({ x: 0, y: 0, width: size[0] ?? 0, height: size[1] ?? 0 })
   win.contentView.addChildView(view)
+  // 视图跟随窗口尺寸（2026-09-28 用户报障：最大化后仍显示创建时的局部——
+  // 挂载只设了一次 bounds，缺 resize 跟随）。resize 事件覆盖拖拽与最大化。
+  if (!(win as unknown as { __tintinResizeWired?: boolean }).__tintinResizeWired) {
+    ;(win as unknown as { __tintinResizeWired?: boolean }).__tintinResizeWired = true
+    win.on('resize', () => {
+      const v = browserView
+      if (!v || v.webContents.isDestroyed() || !browserWindow || browserWindow.isDestroyed()) return
+      const s = browserWindow.getContentSize()
+      v.setBounds({ x: 0, y: 0, width: s[0] ?? 0, height: s[1] ?? 0 })
+    })
+  }
 }
 
 async function navigateTo(platform: string): Promise<{ ok: boolean; error?: string }> {
