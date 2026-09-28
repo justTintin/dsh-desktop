@@ -1475,13 +1475,30 @@ function exportMultiToDraft({ videoPaths, videoDurations = null, muteVideoAudio 
     content.tracks = tracks
 
     fs.writeFileSync(path.join(draftFolder, 'draft_content.json'), JSON.stringify(content, null, 2), 'utf-8')
+    // 2026-09-28 导出完整性校验（用户报障：媒体丢失仍提示导出正常）：逐素材 path
+    // 存在性校验，缺失清单随结果返回——渲染层显性提示，不再静默"导出正常"。
+    // 草稿照写（剪映内链接媒体可补救）；path 形态异常（如含 "[object Object]"）
+    // 一并计入缺失并原样回传，供上游定位注入点。
+    const missingMedia = []
+    {
+      const seenPaths = new Set()
+      for (const list of Object.values(content.materials || {})) {
+        if (!Array.isArray(list)) continue
+        for (const m of list) {
+          const p = typeof m?.path === 'string' ? m.path : ''
+          if (!p || seenPaths.has(p)) continue
+          seenPaths.add(p)
+          if (!fs.existsSync(p)) missingMedia.push({ name: m.material_name || '', path: p })
+        }
+      }
+    }
     // bgmIncluded：BGM 轨是否实际生成（未选/文件不存在时为 false，渲染层据实提示）
     // conformance：标准符合性自检（本路径全部走标准构造器，预期 0 警告；非 0 即构造器缺陷）
     const conformance = auditDraftStandardConformance(content)
     // 2026-09-19 模板轨诊断回传（用户报障「关键词不显示」零信号根因）：
     // expected=输入命中非空；appended=预设实际成段数（原生模板样式）；
     // kwFallbackSegs=预设缺失时同一命中落纯文本段的兜底段数（显示保证）。渲染层据实提示
-    return { success: true, message: draftFolder, draftName, schemaVersion: DRAFT_SCHEMA, bgmIncluded, conformance, textTplExpected, textTplAppended, textTplKwFallbackSegs }
+    return { success: true, message: draftFolder, draftName, schemaVersion: DRAFT_SCHEMA, bgmIncluded, conformance, textTplExpected, textTplAppended, textTplKwFallbackSegs, missingMedia }
   } catch (e) {
     return { success: false, message: e && e.message ? e.message : String(e) }
   }

@@ -10,6 +10,7 @@ export interface TimingRow {
 }
 // ── TTS 文本预处理 / 切句 ──
 export function preprocessTtsText(text: unknown): string
+export function preprocessTtsKeepingPause(text: unknown): string
 export function intToCn(n: number): string
 export function splitSentences(text: unknown): string[]
 // ── 变速 / WAV 字节层 ──

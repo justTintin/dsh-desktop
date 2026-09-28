@@ -595,8 +595,16 @@ async function exportAllToJianyingDraft(): Promise<void> {
     if (res && res.success) {
       // 2026-09-14 用户裁决：导出成功后自动拉起剪映（主进程 launchJianying），
       // 替代原「打开草稿文件夹」；拉起状态附在通知里
-      const rx = res as unknown as { launched?: boolean; jianyingRunning?: boolean; bgmIncluded?: boolean; message?: string; conformance?: { checkedSegs?: number; warnings?: string[] } }
+      const rx = res as unknown as { launched?: boolean; jianyingRunning?: boolean; bgmIncluded?: boolean; message?: string; conformance?: { checkedSegs?: number; warnings?: string[] }; missingMedia?: Array<{ name?: string; path?: string }> }
       let tail = rx.launched ? '（已拉起剪映）' : rx.jianyingRunning ? '（剪映已运行，草稿已在首页）' : ''
+      // 2026-09-28 导出完整性回传（exporter missingMedia）：缺失媒体显性提示 +
+      // clientError 落 harness.log（坏 path 原样回传——"[object Object]" 类注入点定位证据）
+      const missingMedia = Array.isArray(rx.missingMedia) ? rx.missingMedia : []
+      if (missingMedia.length) {
+        const names = missingMedia.map((m) => m.name || m.path || '?').join('、')
+        tail += `\n⚠️ ${missingMedia.length} 条媒体缺失（剪映内链接媒体后可导出）：${names}`
+        clientError('jianying-export', '导出草稿存在缺失媒体', missingMedia.map((m) => JSON.stringify({ name: m.name, path: m.path })).join('\n'))
+      }
       // 2026-09-16：记录草稿目录路径（供「打开草稿目录」按钮使用）
       if (rx.message) lastExportDraftPath.value = String(rx.message)
       // 2026-09-15 用户报障：BGM 未选/文件已删时静默产出无 BGM 轨草稿——据实附在通知里

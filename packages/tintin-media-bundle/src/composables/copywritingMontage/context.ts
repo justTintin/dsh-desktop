@@ -30,11 +30,27 @@ export function errText(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
 
-/** Windows 路径拼接（渲染层无 node path；混剪缓存目录专用） */
-export function joinPath(...parts: string[]): string {
+/** Windows 路径拼接（渲染层无 node path；混剪缓存目录专用）。
+ *  非字符串部件（上游对象泄漏，2026-09-28 草稿 "[object Object]" 路径事故）：
+ *  String 化保流程不炸，同时 error 上报带调用栈（落 harness.log 定位注入点）。 */
+export function joinPath(...parts: unknown[]): string {
   return parts
     .filter(Boolean)
-    .map((s, i) => (i === 0 ? s.replace(/[\\/]+$/, '') : s.replace(/^[\\/]+|[\\/]+$/g, '')))
+    .map((s, i) => {
+      const str = typeof s === 'string'
+        ? s
+        : (() => {
+          try {
+            window.tintin?.env?.log?.({
+              level: 'error',
+              tag: 'joinPath',
+              message: `non-string part[${i}]=${String(s)} stack=${String(new Error().stack || '').slice(0, 500)}`,
+            })
+          } catch { /* 桥未就绪时静默 */ }
+          return String(s)
+        })()
+      return i === 0 ? str.replace(/[\\/]+$/, '') : str.replace(/^[\\/]+|[\\/]+$/g, '')
+    })
     .join('\\')
 }
 
