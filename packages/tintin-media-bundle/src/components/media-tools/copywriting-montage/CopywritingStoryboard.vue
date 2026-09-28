@@ -250,7 +250,7 @@ const EMPTY_HINT: Record<string, string> = {
 
     <!-- 单镜选素材弹窗（material 态；素材池=本地上传分割出的镜头；2026-09-22 用户裁决：
          一镜多片——点选即追加进该镜绑定组，组内已选片段自动去重跳过） -->
-    <teleport to=".tintin-media-scope">
+    <teleport to="body"><div class="tintin-media-scope tintin-modal-layer">
       <div v-if="matPickIdx >= 0" class="modal-mask" @click.self="matPickIdx = -1">
         <div class="modal">
           <span class="modal-title">为分镜 #{{ matPickIdx + 1 }} 追加素材（点击追加，可多次选择）</span>
@@ -265,11 +265,11 @@ const EMPTY_HINT: Record<string, string> = {
           <div class="modal-actions"><TButton label="关闭" plain @click="matPickIdx = -1" /></div>
         </div>
       </div>
-    </teleport>
+    </div></teleport>
 
     <!-- 选择脚本弹窗（2026-09-21 用户裁决：加大并左右 1:1——左=脚本列表，右=脚本基本信息；
          「使用此脚本」将分镜与旁白整组回填为新分镜 tab） -->
-    <teleport to=".tintin-media-scope">
+    <teleport to="body"><div class="tintin-media-scope tintin-modal-layer">
       <div v-if="scriptPickDlg.show" class="modal-mask" @click.self="scriptPickDlg.show = false">
         <div class="modal modal--script">
           <span class="modal-title">选择脚本</span>
@@ -314,11 +314,11 @@ const EMPTY_HINT: Record<string, string> = {
           </div>
         </div>
       </div>
-    </teleport>
+    </div></teleport>
 
     <!-- 删除分镜确认弹窗（2026-09-22 用户裁决：删除确认改大弹窗——原「确认」挤在
          × 图标上重叠不可读；分镜内容已同步服务端脚本库的仍保留在库中） -->
-    <teleport to=".tintin-media-scope">
+    <teleport to="body"><div class="tintin-media-scope tintin-modal-layer">
       <div v-if="delDlg.show" class="modal-mask" @click.self="delDlg.show = false">
         <div class="modal">
           <span class="modal-title">删除分镜脚本</span>
@@ -332,7 +332,7 @@ const EMPTY_HINT: Record<string, string> = {
           </div>
         </div>
       </div>
-    </teleport>
+    </div></teleport>
   </div>
 </template>
 <style scoped>

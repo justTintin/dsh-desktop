@@ -300,7 +300,7 @@ function scoreClass(score: number | undefined): string {
       2026-09-11 用户裁决：三块（产品列表｜产品详情｜填写表单）宽度 1:1:1。
       2026-09-19 用户裁决改判：三块宽度 1:1.5:1（详情中栏加宽，核心卖点下新增关键词展示）。
       2026-09-13 改调 /copywriting/voiceover：时长不再手填，逐条按成片时长 duration_s 传入） -->
-    <teleport to=".tintin-media-scope">
+    <teleport to="body"><div class="tintin-media-scope tintin-modal-layer">
       <div v-if="productDlg.show" class="modal-mask" @click.self="closeProductDlg">
         <div class="modal modal-pick">
           <span class="modal-title"> 生成口播文案</span>
@@ -326,10 +326,10 @@ function scoreClass(score: number | undefined): string {
           </div>
         </div>
       </div>
-    </teleport>
+    </div></teleport>
 
     <!-- 口播文案查看弹窗（原版 _view_assembled_copy：标题 + 只读全文 + 关闭） -->
-    <teleport to=".tintin-media-scope">
+    <teleport to="body"><div class="tintin-media-scope tintin-modal-layer">
       <div v-if="copyViewDlg.show" class="modal-mask" @click.self="closeCopyView">
         <div class="modal modal-wide">
           <span class="modal-title">{{ copyViewDlg.title }}</span>
@@ -337,25 +337,25 @@ function scoreClass(score: number | undefined): string {
           <div class="modal-actions"><TButton label="关闭" plain @click="closeCopyView" /></div>
         </div>
       </div>
-    </teleport>
+    </div></teleport>
 
     <!-- 文案生成设置弹窗（原版 _show_ai_rewrite_settings L3317-3405 文案逐字） -->
-    <teleport to=".tintin-media-scope">
-    </teleport>
+    <teleport to="body"><div class="tintin-media-scope tintin-modal-layer">
+    </div></teleport>
 
     <!-- 设置声音克隆弹窗（2026-09-09 用户裁决：对齐声音克隆页 IndexTTS 参数——语速/情感/情感强度；
       保存后克隆声音时随每次 TTS 请求发送） -->
-    <teleport to=".tintin-media-scope">
-    </teleport>
+    <teleport to="body"><div class="tintin-media-scope tintin-modal-layer">
+    </div></teleport>
 
     <!-- BGM 选择弹窗（2026-09-09 用户裁决：同音频生成页左栏布局——搜索/分类/标签/列表/分页；
       单击选中、双击或 ▶ 试听；确定后下载落盘回填 BGM 路径） -->
-    <teleport to=".tintin-media-scope">
-    </teleport>
+    <teleport to="body"><div class="tintin-media-scope tintin-modal-layer">
+    </div></teleport>
 
     <!-- 配音文案编辑弹窗（原版 TextEditDialog，dialogs.py L31-80 文案逐字；⚖ 对比按钮同入口附原文对照） -->
-    <teleport to=".tintin-media-scope">
-    </teleport>
+    <teleport to="body"><div class="tintin-media-scope tintin-modal-layer">
+    </div></teleport>
   </div>
 </template>
 

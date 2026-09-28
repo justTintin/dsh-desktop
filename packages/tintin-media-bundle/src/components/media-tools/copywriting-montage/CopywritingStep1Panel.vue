@@ -107,7 +107,7 @@ onMounted(() => { void loadScriptProviders() })
       />
 
       <!-- 高级脚本设置弹窗（2026-09-21 用户裁决：改弹出窗；表单项实时绑定即时生效） -->
-      <teleport to=".tintin-media-scope">
+      <teleport to="body"><div class="tintin-media-scope tintin-modal-layer">
         <div v-if="showAdvDlg" class="modal-mask" @click.self="showAdvDlg = false">
           <div class="modal modal--adv">
             <span class="modal-title">高级脚本设置</span>
@@ -147,10 +147,10 @@ onMounted(() => { void loadScriptProviders() })
             <div class="modal-actions"><TButton label="完成" @click="showAdvDlg = false" /></div>
           </div>
         </div>
-      </teleport>
+      </div></teleport>
 
       <!-- 预览最终提示词弹窗（只读展示 system + user 两条消息） -->
-      <teleport to=".tintin-media-scope">
+      <teleport to="body"><div class="tintin-media-scope tintin-modal-layer">
         <div v-if="promptPreviewDlg.show" class="modal-mask" @click.self="closePromptPreview">
           <div class="modal modal-wide">
             <span class="modal-title">预览最终提示词</span>
@@ -165,7 +165,7 @@ onMounted(() => { void loadScriptProviders() })
             <div class="modal-actions"><TButton label="关闭" plain @click="closePromptPreview" /></div>
           </div>
         </div>
-      </teleport>
+      </div></teleport>
 </template>
 
 <style scoped>

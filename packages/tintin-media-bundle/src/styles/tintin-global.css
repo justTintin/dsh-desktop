@@ -628,3 +628,13 @@
    ═══════════════════════════════════════════════════════════ *//* dropped in media panel scope (glass-mode never set by host): html.glass-mode .glass-card */
 /* dropped in media panel scope (glass-mode never set by host): html.glass-mode:root.dark .glass-card */
 
+
+/* ═══ 弹层容器（2026-09-28）═════════════════════════════════════════
+   向导弹层（高级脚本设置/选择分镜脚本/删除确认等）teleport 到 body 的
+   独立容器：容器自带 .tintin-media-scope 类保住 CSS token（e8cda7f 教训），
+   display:contents 移除自身盒子——不占文档流，同时整体脱离
+   #tintin-view-overlay（fixed z:9998 + overflow:auto）的层叠与裁剪环境。
+   mask 层级压过宿主全部面板（0.1.7 实测宿主 z-index:1100 面板可盖
+   mask 原 1002——2026-09-28 用户报障「高级脚本设置又无法弹出」即此）。 */
+.tintin-modal-layer { display: contents; }
+body > .tintin-modal-layer .modal-mask { z-index: 12000 !important; }

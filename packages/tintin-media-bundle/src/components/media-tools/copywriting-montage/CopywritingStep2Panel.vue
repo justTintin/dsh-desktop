@@ -556,7 +556,7 @@ function scoreClass(score: number | undefined): string {
       <!-- 选择素材弹窗（2026-09-22 用户裁决：素材选择与主界面分离——
            点击「选择素材」弹出素材来源弹窗（本地上传/素材库等 tab），
            确认后关闭弹窗并自动智能镜头分割） -->
-      <teleport to=".tintin-media-scope">
+      <teleport to="body"><div class="tintin-media-scope tintin-modal-layer">
         <div v-if="srcDlg" class="modal-mask srcdlg-mask" @click.self="srcDlg = false">
           <div class="modal srcdlg-modal" :class="{ 'srcdlg-modal--max': srcDlgMax }">
             <!-- 2026-09-23 用户裁决：标题行右上角窗口化控制（最大化/还原/关闭） -->
@@ -793,10 +793,10 @@ function scoreClass(score: number | undefined): string {
             </div>
           </div>
         </div>
-      </teleport>
+      </div></teleport>
 
       <!-- 停止确认弹窗（分割进行中重选：先停止当前分割，已完成素材保留） -->
-      <teleport to=".tintin-media-scope">
+      <teleport to="body"><div class="tintin-media-scope tintin-modal-layer">
         <div v-if="srcStopConfirm" class="modal-mask" @click.self="srcStopConfirm = false">
           <div class="modal">
             <span class="modal-title">分割进行中</span>
@@ -807,11 +807,11 @@ function scoreClass(score: number | undefined): string {
             </div>
           </div>
         </div>
-      </teleport>
+      </div></teleport>
 
       <!-- 匹配目标选择弹窗（2026-09-23 用户裁决：匹配前先勾选要匹配到哪些分镜脚本，
            默认全选=原批量口径；确认后逐勾选脚本 LLM 匹配+兜底装填） -->
-      <teleport to=".tintin-media-scope">
+      <teleport to="body"><div class="tintin-media-scope tintin-modal-layer">
         <div v-if="matchDlg.show" class="modal-mask" @click.self="matchDlg.show = false">
           <div class="modal">
             <span class="modal-title">选择要匹配的分镜脚本</span>
@@ -839,7 +839,7 @@ function scoreClass(score: number | undefined): string {
             </div>
           </div>
         </div>
-      </teleport>
+      </div></teleport>
 
       <section class="card">
         <!-- 选择素材 + 智能匹配到分镜脚本（2026-09-23 用户裁决：两按钮同一行平分；
