@@ -228,7 +228,7 @@ onMounted(loadCatalog)
 
     <!-- ③ 克隆模型（2026-09-20 用户裁决：QwenTTS 启用——服务端 TTS 统一入口
          engine=qwen3 已上线；克隆必填参考音频文稿 ref_text，缺失服务端 400；
-         voxcpm 已删除不恢复） -->
+         2026-09-28 服务端恢复 VoxCPM2（engine=voxcpm），加为第三选项） -->
     <div class="form-field">
       <label class="form-label">克隆模型</label>
       <div class="segmented">
@@ -242,14 +242,21 @@ onMounted(loadCatalog)
         >QwenTTS（Qwen3-TTS）</button>
         <button
           class="segmented__btn"
+          :class="{ 'is-active': ttsEngine === 'voxcpm' }"
+          type="button"
+          title="VoxCPM2：克隆需在下方填写参考音频文稿"
+          @click="ttsEngine = 'voxcpm'"
+        >VoxCPM2</button>
+        <button
+          class="segmented__btn"
           :class="{ 'is-active': ttsEngine === 'indextts' }"
           type="button"
           @click="ttsEngine = 'indextts'"
         >IndexTTS（快速/情感）</button>
       </div>
-      <span class="form-hint">{{ ttsEngine === 'qwen3'
-        ? '当前 Qwen3-TTS：克隆必须填写参考音频文稿（参考文本），缺失服务端 400'
-        : '当前使用 IndexTTS；整体克隆与逐行生成都用此模型与下方参数' }}</span>
+      <span class="form-hint">{{ ttsEngine === 'indextts'
+        ? '当前使用 IndexTTS；整体克隆与逐行生成都用此模型与下方参数'
+        : '当前引擎克隆必须填写参考音频文稿（参考文本），缺失服务端 400' }}</span>
     </div>
 
     <!-- ③+ 引擎参数（2026-09-20 用户裁决：按引擎显示各自设置——

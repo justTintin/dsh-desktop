@@ -54,10 +54,12 @@ const {
  *  移植版 http 页面禁止 file:/// 子资源，本地媒体经宿主 /tintin/media 流式供给） */
 
 /** TTS 引擎下拉选项（2026-09-20 服务端 TTS 统一入口上线：QwenTTS 启用，
- *  value 对齐契约 engine=qwen3；修正历史拼写 idexttts→indextts） */
+ *  value 对齐契约 engine=qwen3；修正历史拼写 idexttts→indextts。
+ *  2026-09-28 服务端恢复 VoxCPM2（engine=voxcpm），加为第三选项） */
 // 2026-09-20 用户裁决：QwenTTS 为默认引擎，选项置顶
 const TTS_ENGINE_OPTIONS = [
   { label: 'QwenTTS（Qwen3-TTS）', value: 'qwen3' },
+  { label: 'VoxCPM2', value: 'voxcpm' },
   { label: 'IndexTTS（快速/情感）', value: 'indextts' },
 ]
 /** 情感预设选项（IndexTTS emo_text 常用值，同声音克隆页） */
@@ -257,7 +259,7 @@ const tabVoices = computed(() => {
         <div class="modal">
           <span class="modal-title">设置声音克隆</span>
           <!-- 2026-09-20 用户裁决：按引擎显示各自设置——语速/情感为 IndexTTS 专属（QwenTTS 忽略，曾致「变速不起作用」） -->
-          <span class="hint">以下参数在克隆声音时随每次 TTS 请求发送（当前引擎：{{ cloneParamsDlg.engine === 'qwen3' ? 'QwenTTS' : 'IndexTTS' }}）</span>
+          <span class="hint">以下参数在克隆声音时随每次 TTS 请求发送（当前引擎：{{ cloneParamsDlg.engine === 'qwen3' ? 'QwenTTS' : cloneParamsDlg.engine === 'voxcpm' ? 'VoxCPM2' : 'IndexTTS' }}）</span>
           <template v-if="cloneParamsDlg.engine === 'indextts'">
           <div class="cp-field">
             <div class="row between">

@@ -360,8 +360,9 @@ function createMontageVoiceApi({ httpRequest, isExpectedOfflineError, getServerU
   async function synthesizeItem(text, refAudioB64, outWavPath, apiUrl, emit, extra, pauseMs, targetDuration = 0) {
     const segs = L.splitSentences(text)
     let mergedText = text.trim()
-    // 2026-09-20：qwen3 引擎不插 ((pause=ms)) 标记（IndexTTS 专属约定，qwen3 会照读）
-    const pause = (extra && extra.engine === 'qwen3') ? 0 : Math.max(0, Math.round(Number(pauseMs ?? 0) || 0))
+    // 2026-09-20：qwen3 引擎不插 ((pause=ms)) 标记（IndexTTS 专属约定，qwen3 会照读）；
+    // 2026-09-28：voxcpm（VoxCPM2 主进程引擎）同样不插——pause 标记是 IndexTTS 专属约定
+    const pause = (extra && (extra.engine === 'qwen3' || extra.engine === 'voxcpm')) ? 0 : Math.max(0, Math.round(Number(pauseMs ?? 0) || 0))
     if (pause > 0 && segs.length > 1) {
       // 句界插显式停顿标记（splitSentences 保留句尾标点，直接 join）
       mergedText = segs.join(`((pause=${pause}))`)
@@ -372,7 +373,7 @@ function createMontageVoiceApi({ httpRequest, isExpectedOfflineError, getServerU
     emit?.({ stage: '正在合成语音...' })
     let content
     let segTiming = null
-    if ((extra && extra.engine === 'qwen3') && segs.length > 1 && mergedText.length > 120) {
+    if ((extra && (extra.engine === 'qwen3' || extra.engine === 'voxcpm')) && segs.length > 1 && mergedText.length > 120) {
       // 2026-09-21 文案混剪长文案（用户裁决「先文案→再声音→再按文案剪辑」）：qwen3 整段
       //   单次请求有输入长度上限 → 按句拆成多次请求、帧级拼接（句间静音=「句间停顿」设置；
       //   分段实测时长攒 timing）。target_duration 不随分句下发（长文案以声音自然时长为准，
