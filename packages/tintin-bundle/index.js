@@ -14,7 +14,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import z from '@deepseek-ai/schemastery'
 import { resolveMachineIdSync } from './lib/machine-id.js'
 import { findLegacyConfigDir, planImportedSettingsRecovery, planLegacyMigration, readImportedTintinSection } from './lib/legacy-config.js'
-import { mergeConfigDocs, mergeTintinConfigStore, readTintinConfigStore } from './lib/tintin-config-store.js'
+import { mergeConfigDocs, mergeTintinConfigStore, readTintinConfigStore, stripEmptyObjectLeaves } from './lib/tintin-config-store.js'
 import {
   createServerUrlResolver,
   createHttpRequest,
@@ -254,8 +254,10 @@ export async function apply(ctx, config) {
     if (!dshHome) return undefined
     const section = readImportedTintinSection(join(dshHome, 'settings.yaml.imported'))
     // 生效视图 = 自有存储 ∪ profile config（后者优先，与解析链同序）——
-    // 用户在任一层的重设都视为已配置，恢复不覆盖。
-    const effective = mergeConfigDocs(readTintinConfigStore(dshHome) ?? {}, config ?? {})
+    // 用户在任一层的重设都视为已配置，恢复不覆盖。config 层先剥 schemastery
+    // 占位符（空对象=未提交值），否则会覆盖 store 真实地址（实测向导预填
+    // "[object Object]" 事故）。
+    const effective = mergeConfigDocs(readTintinConfigStore(dshHome) ?? {}, stripEmptyObjectLeaves(config) ?? {})
     const ops = planImportedSettingsRecovery(section, effective)
     if (ops.length === 0) return undefined
     const patch = {}
@@ -530,7 +532,7 @@ export async function apply(ctx, config) {
     // 第二档即时读到，无需等 fiber 重启。get 返回合并视图（自有存储 ∪ profile
     // config，后者优先）——与 server-proxy 解析链同序，任一层重设都算已配置。
     'config:get': () => ({
-      value: mergeConfigDocs(readTintinConfigStore(process.env.DSH_HOME) ?? {}, config ?? {}),
+      value: mergeConfigDocs(readTintinConfigStore(process.env.DSH_HOME) ?? {}, stripEmptyObjectLeaves(config) ?? {}),
     }),
     'config:merge': (args) => {
       const patch = args?.[0]

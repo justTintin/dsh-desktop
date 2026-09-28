@@ -6,7 +6,7 @@
 // （分割/素材编排仍保留在 useCopywritingMontageStep1Split，供「镜头重组」页链路使用）。
 // 状态经 inject 解构回原名（零改动）；本页提示词组装与生成在 useCopywritingMontage。
 // ═════════════════════════════════════════════════════════════
-import { ref, computed, onMounted, inject } from 'vue'
+import { ref, computed, onMounted, inject, nextTick } from 'vue'
 import TButton from '@/components/common/TButton.vue'
 import CopywritingStoryboard from './CopywritingStoryboard.vue'
 import TSelect from '@/components/common/TSelect.vue'
@@ -28,6 +28,25 @@ const {
 
 /** 高级脚本设置弹窗（2026-09-21 用户裁决：高级设置改弹出窗；场景选择置于入口之后） */
 const showAdvDlg = ref(false)
+
+// 临时诊断（2026-09-28 弹窗"无法弹出"连环报障）：error 级经 env:log 落
+// harness.log。三段埋点切开链路——①点击是否到达（open requested）；
+// ②teleport 目标与旧形态残留（scope/mask 计数，count>1 = 多实例吸收）；
+// ③渲染后 mask 是否真进 DOM 且带目标父级。根因定位后整段移除。
+function openAdvDlg(): void {
+  const scopes = document.querySelectorAll('.tintin-media-scope')
+  const masks = document.querySelectorAll('.modal-mask')
+  const overlay = document.getElementById('tintin-view-overlay')
+  // eslint-disable-next-line no-console
+  console.error('[tintin][adv-dlg] open requested; scopes=', scopes.length, 'pre-masks=', masks.length, 'overlay=', !!overlay, 'overlayDisplay=', overlay ? getComputedStyle(overlay).display : 'n/a', 'activeTab=', document.querySelector('#tintin-top-tabs [data-active="true"]')?.textContent ?? document.getElementById('tintin-top-tabs')?.innerHTML.slice(0, 120))
+  showAdvDlg.value = true
+  nextTick(() => {
+    const mask = document.querySelector('.modal-mask')
+    const cs = mask ? getComputedStyle(mask) : null
+    // eslint-disable-next-line no-console
+    console.error('[tintin][adv-dlg] after tick; maskInDom=', !!mask, 'maskCount=', document.querySelectorAll('.modal-mask').length, 'z=', cs?.zIndex, 'display=', cs?.display, 'parent=', mask?.parentElement?.className?.slice?.(0, 60) ?? 'none', 'rect=', mask ? JSON.stringify(mask.getBoundingClientRect()) : 'n/a')
+  })
+}
 
 /* ── 选择产品（公共弹窗；选中后显示在按钮后面，写入 sharedProductInfo 单一来源）── */
 const pickDlgVisible = ref(false)
@@ -54,7 +73,7 @@ onMounted(() => { void loadScriptProviders() })
             <button class="product-clear" title="清除已选产品" @click="clearScriptProduct">×</button>
           </template>
           <span class="spacer"></span>
-          <TButton label="高级脚本设置" icon="settings" variant="secondary" @click="showAdvDlg = true" />
+          <TButton label="高级脚本设置" icon="settings" variant="secondary" @click="openAdvDlg" />
         </div>
 
         <!-- 场景选择行（2026-09-21 用户裁决：场景选择在高级设置入口之后；2026-09-25 入口移走后本行保留场景/时长/AI 生成）

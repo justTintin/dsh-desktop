@@ -9,6 +9,7 @@ import {
   mergeConfigDocs,
   mergeTintinConfigStore,
   readTintinConfigStore,
+  stripEmptyObjectLeaves,
   tintinConfigPath,
 } from '../packages/tintin-bundle/lib/tintin-config-store.js'
 
@@ -50,5 +51,20 @@ describe('tintin-config-store', () => {
       { server: { url: 'http://store:1', provisioned: true }, local: { cacheDir: 'x' } },
       { server: { url: 'http://config:2' } },
     )).toEqual({ server: { url: 'http://config:2', provisioned: true }, local: { cacheDir: 'x' } })
+  })
+
+  it('stripEmptyObjectLeaves drops schemastery volatile placeholders so they cannot clobber real values', () => {
+    // 2026-09-28 实机事故：未提交的 volatile 字段被 schemastery 编译成空对象
+    // 占位，合并时覆盖 store 里的真实 URL，向导预填成 "[object Object]"。
+    const placeholderConfig = { server: { url: {}, provisioned: {} }, local: {} }
+    expect(stripEmptyObjectLeaves(placeholderConfig)).toBeUndefined()
+    const merged = mergeConfigDocs(
+      { server: { url: 'http://192.168.111.31:8000', provisioned: true } },
+      stripEmptyObjectLeaves(placeholderConfig) ?? {},
+    ) as { server: { url?: string } }
+    expect(merged.server.url).toBe('http://192.168.111.31:8000')
+    // 部分占位：真实值与占位符混排时只剥占位、保留真实
+    expect(stripEmptyObjectLeaves({ server: { url: 'http://a:1', provisioned: {} }, local: { cacheDir: '' } }))
+      .toEqual({ server: { url: 'http://a:1' }, local: { cacheDir: '' } })
   })
 })

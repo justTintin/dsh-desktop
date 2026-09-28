@@ -88,6 +88,8 @@ chkGE('3.11', 'resolver store 档', 'packages/tintin-bundle/lib/server-proxy.js'
 chkGE('3.11b', 'resolver 字符串守卫（schemastery 占位符防回归）', 'packages/tintin-bundle/lib/server-proxy.js', "typeof u === 'string'", 2)
 chkGE('3.12', 'client config 命名空间', 'packages/tintin-bundle/client.js', "namespaced\\('config'", 1)
 chkGE('3.13', 'volatile 标记（schema 声明完整性）', 'packages/tintin-bundle/index.js', '\\.volatile\\(\\)', 3)
+chkGE('3.9c', '占位符剥除（schemastery volatile 空对象——"[object Object]" 事故锚点）', 'packages/tintin-bundle/lib/tintin-config-store.js', 'stripEmptyObjectLeaves', 1)
+chkGE('3.9d', 'client 向导/设置卡 URL 字符串守卫', 'packages/tintin-bundle/client.js', 'typeof (prefill|u) === .string.', 2)
 
 // ── 4. tintin-media-bundle ──────────────────────────────────────────────────
 chkEQ('4.1', '卡片挂载链 12 卡', 'packages/tintin-media-bundle/src/App.vue', 'v-if="active ===|v-else-if="active ===', 12)

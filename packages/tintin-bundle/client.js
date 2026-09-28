@@ -1115,7 +1115,8 @@ window.__ModuleLoader__.load({
         // <DSH_HOME>/tintin/config.json；settings/describe 读 profile 层不再是
         // 权威源）。
         window.tintin?.config?.get?.().then((res) => {
-          setUrl(String(res?.value?.server?.url ?? ''))
+          const u = res?.value?.server?.url
+          setUrl(typeof u === 'string' ? u : '')
           setState('ready')
         }).catch((e) => { setError(String(e?.message ?? e)); setState('error') })
       }, [])
@@ -1297,7 +1298,9 @@ async function maybeShowSetupWizard() {
   const status = el.querySelector('#tintin-setup-status')
   const go = el.querySelector('#tintin-setup-go')
   const skip = el.querySelector('#tintin-setup-skip')
-  input.value = String(value?.server?.url ?? '')
+  // 字符串守卫：schemastery volatile 占位符若未被存储层剥净，不能进输入框
+  const prefill = value?.server?.url
+  input.value = typeof prefill === 'string' ? prefill : ''
 
   const setBusy = (busy, text, isError) => {
     go.disabled = busy

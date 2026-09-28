@@ -37,6 +37,22 @@ export function mergeConfigDocs(target, patch) {
   return target
 }
 
+/** Schemastery compiles uncommitted volatile fields into empty-object
+ * placeholders — semantically "no value". Letting them through a merge
+ * clobbers real values (0.1.7 live bug: placeholder overwrote the store's
+ * URL and the wizard prefill showed "[object Object]"). Recursively drops
+ * keys whose value is an empty plain object, bottom-up. */
+export function stripEmptyObjectLeaves(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value
+  const out = {}
+  for (const [key, v] of Object.entries(value)) {
+    const cleaned = v && typeof v === 'object' && !Array.isArray(v) ? stripEmptyObjectLeaves(v) : v
+    const isJunk = cleaned !== undefined && typeof cleaned === 'object' && !Array.isArray(cleaned) && Object.keys(cleaned).length === 0
+    if (cleaned !== undefined && !isJunk) out[key] = cleaned
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
 /**
  * Merge a nested patch into the TinTin store and persist atomically
  * (tmp + rename, so a crash mid-write never leaves a truncated store).
