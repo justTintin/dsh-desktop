@@ -25,6 +25,7 @@ import {
 } from './lib/server-proxy.js'
 import { createFfmpegGateApi } from './lib/montage/ffmpeg-gate.js'
 import { createMontageVoiceApi } from './lib/montage/voice-ipc.js'
+import { preprocessTtsKeepingPause } from './lib/montage/voice-tts-logic.js'
 import { createMontageFinalApi } from './lib/montage/final-ipc.js'
 import { createRembgApi, createAudioArchiveApi, createVsrApi } from './lib/media-proxy.js'
 import { loopbackCall, readLoopbackConfig, summarizeExtract } from './lib/loopback-helpers.js'
@@ -787,8 +788,12 @@ export async function apply(ctx, config) {
       const p = args?.[0] ?? {}
       try {
         if (!p.text) throw new Error('tts:generate missing `text`')
+        // 2026-09-28 用户架构约束：所有声音克隆文案强制过归一化（读音标注/数字转
+        // 中文/大写拆分），与口播配音 postTts 同一口径——此前 text 原样透传，
+        // "Blue VO!CE" 被逐字母读。
+        const text = preprocessTtsKeepingPause(String(p.text))
         const body = {
-          text: p.text,
+          text,
           ...(p.sample_id ? { sample_id: p.sample_id } : {}),
           ...(p.prompt_audio ? { prompt_audio: p.prompt_audio } : {}),
           ...(p.engine ? { engine: String(p.engine) } : {}),

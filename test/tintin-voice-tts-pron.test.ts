@@ -2,7 +2,10 @@
 // 2026-09-28 实机事故：文案 "Blue VO!CE"（罗技麦克风营销拼写）被逐字母读——
 // 标注机制「字母串(读法)」的字母串定义被 `!` 切断、读法不容空格，标注失效。
 import { describe, expect, it } from 'vitest'
-import { preprocessTtsText } from '../packages/tintin-bundle/lib/montage/voice-tts-logic.js'
+import {
+  preprocessTtsKeepingPause,
+  preprocessTtsText,
+} from '../packages/tintin-bundle/lib/montage/voice-tts-logic.js'
 
 describe('tts 读音标注（preprocessTtsText 第 0 步）', () => {
   it('标注括号内的字母串允许内嵌 !（品牌营销拼写）', () => {
@@ -26,5 +29,13 @@ describe('tts 读音标注（preprocessTtsText 第 0 步）', () => {
   it('普通感叹句无标注括号时不受影响', () => {
     expect(preprocessTtsText('STOP!')).toBe('S T O P!')
     expect(preprocessTtsText('很好!(注释)')).toBe('很好!(注释)') // 中文串不参与标注
+  })
+
+  it('统一入口 preprocessTtsKeepingPause：所有克隆文案强制过归一化（tts:generate 同口径）', () => {
+    // 无停顿标记 = 直接归一化
+    expect(preprocessTtsKeepingPause('VO!CE(blue voice)上架了')).toBe('blue voice上架了')
+    // 停顿标记原样保留，两侧段落各自归一化（2026-09-08 服务端停顿约定）
+    expect(preprocessTtsKeepingPause('PRO X 2(普罗)上市。((pause=500))555(三五)电池'))
+      .toBe('P R O X 普罗上市。((pause=500))三五电池')
   })
 })

@@ -56,6 +56,24 @@ function intToCn(n) {
   return result
 }
 
+// ── 归一化统一入口（2026-09-28 用户架构约束：所有声音克隆文案强制过归一化）──
+// 停顿标记保护：text 里的 ((pause=N)) 不得进 preprocessTtsText（数字会被转
+// 中文、字母会被拆分），按标记切分逐段预处理后原样拼回。所有 TTS 入口
+// （口播配音 postTts / 声音克隆 tts:generate / 批量克隆 synthesizeItem）
+// 一律经此函数，禁止绕行。
+const PAUSE_MARK_RE = /\(\(pause=\d+\)\)/g
+
+function preprocessTtsKeepingPause(text) {
+  const s = String(text ?? '')
+  PAUSE_MARK_RE.lastIndex = 0
+  if (!PAUSE_MARK_RE.test(s)) return preprocessTtsText(s)
+  PAUSE_MARK_RE.lastIndex = 0
+  return String(s)
+    .split(/((?:\(\(pause=\d+\)\)))/)
+    .map((p) => (/^\(\(pause=\d+\)\)$/.test(p) ? p : preprocessTtsText(p)))
+    .join('')
+}
+
 function preprocessTtsText(text) {
   let t = String(text ?? '')
   // 0. 读音标注（voice_workers.py 2026-09-07 新增第 0 步，PR#4 条目9）：
@@ -1373,6 +1391,7 @@ function buildTextTemplateDecorations(dir, rid, videoW, videoH) {
 
 export {
   preprocessTtsText,
+  preprocessTtsKeepingPause,
   intToCn,
   splitSentences,
   computeSpeedAdjust,

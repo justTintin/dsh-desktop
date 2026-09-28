@@ -281,15 +281,9 @@ function createMontageVoiceApi({ httpRequest, isExpectedOfflineError, getServerU
   //  （duration_factor/emo_text/emo_alpha，2026-09-09 用户裁决「设置声音克隆」弹窗配置）
   // 停顿标记保护（2026-09-08 服务端句间停顿标记）：text 里的 ((pause=N)) 不得进
   //  preprocessTtsText（数字会被转中文、字母会被拆分），按标记切分逐段预处理后原样拼回。
-  const PAUSE_MARK_RE = /\(\(pause=\d+\)\)/g
-  function preprocessTtsKeepingPause(text) {
-    if (!PAUSE_MARK_RE.test(text)) return L.preprocessTtsText(text)
-    PAUSE_MARK_RE.lastIndex = 0
-    return String(text)
-      .split(/((?:\(\(pause=\d+\)\)))/)
-      .map((p) => (/^\(\(pause=\d+\)\)$/.test(p) ? p : L.preprocessTtsText(p)))
-      .join('')
-  }
+  //  2026-09-28 实现移至 voice-tts-logic.js 导出（用户架构约束：所有声音克隆文案
+  //  强制过归一化，tts:generate 同口径），此处改用共享实现。
+  const preprocessTtsKeepingPause = L.preprocessTtsKeepingPause
   async function postTts(apiUrl, text, refAudioB64, extra, targetDuration = 0) {
     const payload = {
       text: preprocessTtsKeepingPause(text),
