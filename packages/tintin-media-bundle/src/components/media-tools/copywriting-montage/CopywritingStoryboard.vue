@@ -207,8 +207,10 @@ const EMPTY_HINT: Record<string, string> = {
 
         <!-- 绑定素材（material 态；2026-09-22 用户裁决：一镜多片·按时长装填——
              逐片列表 + 覆盖时长/镜标对比；「选择素材」追加式，单片可移除，「解绑」清空整组）
-             2026-09-25 用户裁决：片数汇总/达标徽标移到「绑定素材」标签后；追加/解绑并排一行 -->
-        <template v-if="mode === 'material'">
+             2026-09-25 用户裁决：片数汇总/达标徽标移到「绑定素材」标签后；追加/解绑并排一行
+             2026-09-28 用户需求：fx（特效包装）态同样展示绑定素材信息（只读——
+             无移除/追加/解绑操作，包装确认态不改变绑定）；voice 态维持不显示 -->
+        <template v-if="mode === 'material' || mode === 'fx'">
           <div class="seg-field">
             <div class="row"><span class="lbl">绑定素材</span>
               <template v-if="boundClips(i).length">
@@ -220,11 +222,11 @@ const EMPTY_HINT: Record<string, string> = {
             <div v-if="boundClips(i).length" class="sb-line">
               <span v-for="(s, j) in boundClips(i)" :key="s.idx" class="bound-clip">
                 {{ j + 1 }}. {{ s.name }}（{{ s.duration > 0 ? s.duration.toFixed(1) + 's' : '—' }}）
-                <button class="unbind-btn" title="移除该片段" @click="removeShotClipAt(i, j)">×</button>
+                <button v-if="mode === 'material'" class="unbind-btn" title="移除该片段" @click="removeShotClipAt(i, j)">×</button>
               </span>
             </div>
             <div v-else class="muted">未绑定素材</div>
-            <div class="row">
+            <div v-if="mode === 'material'" class="row">
               <TButton label="选择素材（追加）" variant="secondary" size="small" @click="matPickIdx = i" />
               <TButton v-if="boundClips(i).length" label="解绑全部" variant="secondary" size="small" @click="unbindShotMaterial(i)" />
             </div>
