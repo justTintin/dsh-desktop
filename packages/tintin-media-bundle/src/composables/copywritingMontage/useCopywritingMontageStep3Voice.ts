@@ -959,6 +959,11 @@ function clearVoiceProgressListener(): void {
       scriptSyncing.value = false
     }
   }
+  // 2026-09-29 用户裁决：绑定随脚本同步的触发=三个里程碑动作——①第二步批量克隆
+  // 完成（cloneAllTabVoices 内已有）②第三步生成剪辑方案成功（onConfirmCompose 内
+  // 已有，0923 裁决）③第四步导出剪映草稿（Step4Panel 导出完成后调用，见该文件）。
+  // 手动「保存脚本」不作为触发要求；不做成全局 watch（避免任何绑定抖动都触发全量
+  // 脚本回传）。attachClipGroups 仍挂在本文件两个 POST 点，途经即携带。
   /** 进入模块时按 scriptId 回学服务端选题名（2026-09-23 用户裁决：本地持久化只恢复
    *  界面状态，同步是单向推——本地默认名「脚本N」会长期挂 Name；此处一次性拉脚本库
    *  列表，按 id 回填 tab.topic 与 tab.name（display_name 优先），best-effort 静默。 */

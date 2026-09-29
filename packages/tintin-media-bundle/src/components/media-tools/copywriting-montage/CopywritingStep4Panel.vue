@@ -103,6 +103,7 @@ const {
   openFinalDir,
   openExportDraftDir,
   exportAllToJianyingDraft,
+  syncStoryboardsToServer,
   previewFinalVideo,
   step4Candidates,
   toAbsolute: vdToAbsolute,
@@ -384,6 +385,16 @@ function onAnnotateRemoveOcc(planKey: string, rowStart: number, word: string): v
 }
 function onAnnotateRemove(planKey: string, word: string): void {
   removeManualKeyword(planKey, word)
+}
+/** 导出剪映草稿后同步脚本（2026-09-29 用户裁决：绑定随脚本同步的第三时机——
+ *  导出草稿时把当时的绑定组回传服务端。导出取消/失败也同步：绑定状态与导出
+ *  成败无关，回传幂等无害） */
+async function onExportDraft(): Promise<void> {
+  try {
+    await exportAllToJianyingDraft()
+  } finally {
+    void syncStoryboardsToServer()
+  }
 }
 // 2026-09-24 用户裁决：Step4 逐视频 BGM 行对应每个脚本——一行一分镜，
 // 键 = plan:{tabId}（与导出 bgmPaths 的 rowBgmForCandidate(planKey) 同键对齐）
@@ -731,7 +742,7 @@ const fancyCustomPreviewStyle = computed<Record<string, string>>(() => {
             <TButton label="导出到剪映时间轴(带转场)" class="vd4-run vd4-grow"
               :disabled="finalBusy || exportBusy"
               :title="exportBusy ? exportStage : '将合成候选按顺序导出为一条剪映时间轴草稿（口播/字幕/关键词/BGM 各轨独立，片段间自动转场）'"
-              @click="exportAllToJianyingDraft" />
+              @click="onExportDraft" />
             <!-- 轨 2（2026-09-17 用户裁决）：服务端封装好的剪映格式草稿 zip → 解压校验 → 落盘剪映
                  2026-09-18 用户裁决：暂时禁止使用（恒禁用）；恢复时把 :disabled 改回
                  "finalBusy || exportBusy"、title 改回原文案即可 -->

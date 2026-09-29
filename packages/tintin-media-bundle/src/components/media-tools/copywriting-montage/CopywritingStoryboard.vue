@@ -19,7 +19,9 @@ const emit = defineEmits<{ (e: 'sfx-regen', shot: StoryboardShot): void; (e: 'sf
 
 const shell = inject(copywritingMontageShellKey)!
 const {
-  copyShots, copyShotsStale, genStoryboard, storyboardBusy, scriptSaving, saveStoryboard,
+  copyShots, copyShotsStale, genStoryboard, storyboardBusy,
+  // 2026-09-29 用户裁决：第一步「保存脚本」按钮删除——脚本随三个里程碑动作
+  // （批量克隆完成/生成剪辑方案/导出草稿）自动同步到服务端，不再需要手动保存
   scriptPickDlg, openScriptPick, refreshScriptOptions, pickDetail, selectScriptOption, applySelectedScript,
   scenes, shotClipGroup, bindShotMaterial, removeShotClipAt, unbindShotMaterial, toAbsolute,
   storyboards, activeStoryboardId, setActiveStoryboard, renameStoryboardTab, removeStoryboardTab, COPY_STORYBOARD_MAX,
@@ -239,13 +241,14 @@ const EMPTY_HINT: Record<string, string> = {
           </div>
       </div>
 
-      <!-- 2026-09-25 用户裁决：「保存脚本」从脚本信息行移到添加镜头行右对齐 -->
-      <div v-if="editable" class="row between">
+      <!-- 2026-09-29 用户裁决：「保存脚本」按钮删除——脚本随批量克隆完成/生成剪辑
+           方案/导出草稿三个里程碑自动同步，不再需要手动保存（原 0925 右对齐布局随
+           按钮移除；「＋ 添加镜头」保留） -->
+      <div v-if="editable" class="row">
         <TButton label="＋ 添加镜头" variant="secondary" size="small" @click="copyShots.splice(copyShots.length, 0, {
           index: copyShots.length + 1, shot_type: '', visual: '', audio: '', sfx: '', duration: 3,
           material_path: '', material_type: '', material_hash: '', material_id: 0,
         })" />
-        <TButton label="保存脚本" variant="secondary" size="small" :loading="scriptSaving" :disabled="!copyShots.length" @click="saveStoryboard" />
       </div>
     </template>
     <div v-else class="muted">{{ EMPTY_HINT[mode] }}</div>
