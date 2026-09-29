@@ -33,6 +33,9 @@ import crypto from 'node:crypto'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import * as JY from '../jianying/jianying-exporter.js'
+// 文字模板包「服务端→本机剪映」安装器（2026-09-30 用户裁决：进入剪映模板工具与
+// 文案混剪第四步导出前自动安装；通道 jytpl:install）
+import { createJytplInstallChannel } from '../jianying/jianying-preset-install.js'
 // 剪映音频素材自动同步（内置定时任务，2026-09-22 用户裁决：自动把本机剪映音频
 // 素材同步到服务端音频库，不再依赖手动「从剪映同步」）
 import { initJianyingAudioSync, startJianyingAudioSyncTimer } from '../jianying/jianying-audio-sync.js'
@@ -709,6 +712,8 @@ function createMontageFinalApi({ httpRequest, isExpectedOfflineError, getServerU
   }
   const jyAudioSyncCtrl = initJianyingAudioSync({ ipcMain: ipcMainRegistrar, httpRequest, getServerUrl, probeMedia })
   startJianyingAudioSyncTimer(jyAudioSyncCtrl)
+  // 文字模板包安装器（2026-09-30）：服务端 → 本机剪映 Text_V2 + artistEffect 缓存
+  const jytplInstallChannel = createJytplInstallChannel(httpRequest)
   // jyfonts:*（剪映字体扫描/服务端清单/批量上传）——同一张注册表
   createJianyingFontsIpc(ipcMainRegistrar, { httpRequest, isExpectedOfflineError })
 
@@ -1926,6 +1931,8 @@ function createMontageFinalApi({ httpRequest, isExpectedOfflineError, getServerU
   channels['jytpl:list'] = (args, ctx) => jytplList(...args, ctx)
   channels['jytpl:sync'] = (args, ctx) => jytplSync(...args, ctx)
   channels['jytpl:deleteServer'] = (args, ctx) => jytplDeleteServer(...args, ctx)
+  // 2026-09-30：文字模板包下载安装（服务端→本机剪映 Text_V2 + artistEffect 缓存）
+  channels['jytpl:install'] = (args) => jytplInstallChannel(args[0])
   channels['editor:exportJianyingPackage'] = (args, ctx) => editorExportJianyingPackage(...args, ctx)
   channels['bgm:downloadUrl'] = (args, ctx) => bgmDownloadUrl(...args, ctx)
   return channels

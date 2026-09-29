@@ -815,6 +815,8 @@ const tintinClient = (() => {
         jyTemplatesList: (p) => call('jytpl:list', { args: [p] }),
         jyTemplatesSync: (p) => call('jytpl:sync', { args: [p] }),
         jyTemplatesDeleteServer: (p) => call('jytpl:deleteServer', { args: [p] }),
+        // 2026-09-30：文字模板包「服务端→本机剪映」安装（进入剪映模板工具/第四步导出前自动触发）
+        jyTemplatesInstall: (p) => call('jytpl:install', { args: [p] }),
         // 剪映模板页「字体（剪映）」分类（SRC preload jyfonts 域，2026-09-24 随卡片启用补映射）
         jyfontsScan: () => call('jyfonts:scan', { args: [] }),
         jyfontsServerList: () => call('jyfonts:serverList', { args: [] }),

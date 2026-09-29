@@ -34,6 +34,8 @@
         <button class="jytpl-btn accent" :disabled="syncDlg.busy" @click="openSyncDlg">⟳ 从剪映同步</button>
       </div>
     </div>
+    <!-- 2026-09-30：进入本工具自动安装缺失模板的状态行（服务端→本机剪映） -->
+    <div v-if="autoInstallMsg" class="jytpl-autoinstall">{{ autoInstallMsg }}</div>
 
     <!-- 文本页内子分组切换（花字库/文字模板）——位于内容区顶部，不在 tab 行（2026-09-15 用户裁决） -->
     <div v-if="!fontsTab && activeGroupData && (activeGroupData.lanes || []).length > 1" class="jytpl-sublanes">
@@ -427,6 +429,27 @@ onMounted(reload)
 onActivated(reload)
 const catalogLoadedAt = ref(Date.now())
 
+// ── 进入本工具自动安装缺失文字模板（2026-09-30 用户裁决：服务端→本机剪映
+//    Text_V2 + artistEffect 缓存，幂等跳过已装）。KeepAlive 首激活 onMounted 与
+//    onActivated 相继触发 → 10s 内去重；失败仅提示不阻断浏览。──
+const autoInstallMsg = ref('')
+let autoInstallLastRun = 0
+async function autoInstallMissing(): Promise<void> {
+  if (Date.now() - autoInstallLastRun < 10_000) return
+  autoInstallLastRun = Date.now()
+  try {
+    const res = await window.tintin?.server?.jyTemplatesInstall?.({})
+    if (!res) { autoInstallMsg.value = ''; return }
+    if ('error' in res) { autoInstallMsg.value = '模板自动安装失败：' + res.error; return }
+    // 有新装才提示；已齐备时不打扰
+    autoInstallMsg.value = res.installed ? res.note : ''
+  } catch (e) {
+    autoInstallMsg.value = '模板自动安装失败：' + String((e as Error)?.message || e)
+  }
+}
+onMounted(() => { void autoInstallMissing() })
+onActivated(() => { void autoInstallMissing() })
+
 async function syncSelectedById() {
   busy.value = true
   try {
@@ -484,6 +507,7 @@ async function deleteSelected() {
 .jytpl-btn.danger { background: #a85555; border-color: #a85555; color: #fff; }
 .jytpl-btn:disabled { opacity: .4; cursor: not-allowed; }
 .jytpl-loading, .jytpl-error, .jytpl-empty { padding: 40px 0; text-align: center; color: #999; }
+.jytpl-autoinstall { margin: -8px 0 8px; font-size: 12px; color: #8c9; opacity: .9; }
 .jytpl-error { color: #f56c6c; }
 .jytpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
 .jytpl-card { position: relative; border: 1px solid #333; border-radius: 8px; overflow: hidden; background: #1a1a1a; transition: border-color .15s, box-shadow .15s; cursor: pointer; }

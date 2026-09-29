@@ -580,6 +580,21 @@ async function exportAllToJianyingDraft(): Promise<void> {
     // reject → 链路无 catch → 无弹窗无日志的完全静默。解构剔除回调后 IPC 只收纯数据，
     // 并对 invoke 兜底 catch：任何异常都 clientError + 弹窗透出，不再「没反应」。
     const { successBody, ...ipcBase } = base
+    // 2026-09-30 用户裁决：导出前自动补装本机缺失的文字模板包（服务端→本机剪映
+    // Text_V2，幂等跳过已装）——消除"换机导出后文字模板退化为纯文本"。失败不阻断
+    // 导出：缺模板时导出器仍有纯文本兜底段 + ⚠️ 诊断提示。
+    const tplClipsArg = (ipcBase as { textTemplateClips?: Array<Array<{ resourceId?: unknown } | undefined>> }).textTemplateClips
+    const tplRids = new Set<string>()
+    for (const lane of tplClipsArg || []) {
+      for (const hit of lane || []) {
+        const rid = String((hit as { resourceId?: unknown } | undefined)?.resourceId ?? '').trim()
+        if (rid) tplRids.add(rid)
+      }
+    }
+    if (tplRids.size) {
+      try { await window.tintin?.server?.jyTemplatesInstall?.({ ids: [...tplRids].map((rid) => `jy_${rid}`) }) }
+      catch { /* 补装失败不阻断：导出兜底与 ⚠️ 提示仍在 */ }
+    }
     let res: { success: boolean; message: string } | undefined
     try {
       res = await window.tintin?.server?.jianyingExport?.({

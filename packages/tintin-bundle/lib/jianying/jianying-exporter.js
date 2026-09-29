@@ -1719,6 +1719,7 @@ function validateDraftPackage(pkgDir) {
  *  返回 { ok, trackCounts, pathRefs, missing, assetFiles, problems }；不抛异常。 */
 function verifyDraftFolder({ draftFolder, expectedAssetCount = 0 }) {
   const problems = []
+  const warnings = []
   let content = null
   try { content = JSON.parse(fs.readFileSync(path.join(draftFolder, 'draft_content.json'), 'utf-8')) } catch (e) { problems.push('draft_content.json 不可解析：' + ((e && e.message) || e)) }
   try { JSON.parse(fs.readFileSync(path.join(draftFolder, 'draft_meta_info.json'), 'utf-8')) } catch (e) { problems.push('draft_meta_info.json 不可解析：' + ((e && e.message) || e)) }
@@ -1737,8 +1738,17 @@ function verifyDraftFolder({ draftFolder, expectedAssetCount = 0 }) {
         if (it && typeof it.path === 'string' && it.path) {
           pathRefs++
           if (!fs.existsSync(it.path)) {
-            missing++
-            if (problems.length < 10) problems.push('素材路径不存在：' + it.path)
+            // 2026-09-30 降级（用户报障：装上服务端 Text_V2 预设后导出被整卡死）：
+            // Cache/artistEffect 是剪映文字模板的云端特效缓存（按 resource_id 云端
+            // 解析/可重下），本机缺缓存不等于草稿损坏——降为 warning，不再判致命；
+            // 渲染层 missingMedia 仍有「⚠️ 媒体缺失」提示。真本地媒体（视频/音频/
+            // 字幕等）缺失仍为致命。
+            if (it.path.includes('Cache/artistEffect') || it.path.includes('Cache\\artistEffect')) {
+              if (warnings.length < 10) warnings.push('剪映云端特效缓存缺失（可云端解析）：' + it.path)
+            } else {
+              missing++
+              if (problems.length < 10) problems.push('素材路径不存在：' + it.path)
+            }
           }
         }
       }
@@ -1770,7 +1780,7 @@ function verifyDraftFolder({ draftFolder, expectedAssetCount = 0 }) {
     walk(path.join(draftFolder, 'assets'))
   } catch (_) { /* 无 assets 目录（本地文件导出路经）不视为问题 */ }
   if (expectedAssetCount > 0 && assetFiles < expectedAssetCount) problems.push('资产文件数不足：磁盘 ' + assetFiles + ' < 清单 ' + expectedAssetCount)
-  return { ok: problems.length === 0, trackCounts, pathRefs, missing, dangling, assetFiles, problems }
+  return { ok: problems.length === 0, trackCounts, pathRefs, missing, dangling, assetFiles, problems, warnings }
 }
 
 /** 探测 (时长微秒, 宽, 高)；无 deps 或失败返回 [0, 1080, 1920]（_probe_video L241-270） */

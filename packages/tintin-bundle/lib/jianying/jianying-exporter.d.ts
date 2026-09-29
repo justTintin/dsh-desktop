@@ -41,6 +41,9 @@ export function verifyDraftFolder(options: {
   dangling: number
   assetFiles: number
   problems: string[]
+  /** 非致命缺失（2026-09-30：Cache/artistEffect 云端特效缓存本机缺失——剪映按
+   *  resource_id 云端解析，不判导出失败，仅提示） */
+  warnings: string[]
 }
 export function validateDraftPackage(pkgDir: string): {
   ok: boolean

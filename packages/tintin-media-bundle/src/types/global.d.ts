@@ -431,6 +431,10 @@ declare interface TintinBridgeServer {
   jyTemplatesSync(payload: { ids: string[]; /** 音频（音效/音乐）逐条带行内所选入库分类 */ audios?: Array<{ id: string; category: string }> }): Promise<{ ok: boolean; results: Array<{ id: string; ok: boolean; name?: string; error?: string }> } | { error: string }>
   /** 从服务端模板库删除 */
   jyTemplatesDeleteServer(payload: { ids: string[] }): Promise<{ ok: boolean; results: Array<{ id: string; ok: boolean; error?: string }> } | { error: string }>
+  /** 文字模板预设「服务端→本机剪映」安装（2026-09-30：GET /jianying_presets/text_v2
+   *  全量 zip → Text_V2；ids 过滤 jy_<rid>，空=全量；已装同 resource_id 跳过；
+   *  本机未装剪映（无 User Data\Presets）显式报错） */
+  jyTemplatesInstall(payload: { ids?: string[] }): Promise<{ ok: boolean; installed: number; skipped: number; note: string } | { error: string }>
   /** AI 生成 BGM 服务端 URL 下载落盘（本端扩展：本地混音需本地文件） */
   bgmDownloadUrl(payload: { url: string; destDir: string }): Promise<{ path: string } | { error: string } | null>
   /** 文字模板真实动画预览素材：render-preview 小尺寸 alpha WebM 二进制（转 blob 播放） */

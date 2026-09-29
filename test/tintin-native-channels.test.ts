@@ -129,7 +129,8 @@ describe('final-ipc native channels', () => {
       'bgm:downloadUrl', 'editor:exportJianyingPackage', 'final:collectOutputs', 'final:findSrt',
       'final:listResults', 'final:mix', 'final:readTiming', 'jianying:export', 'jyaudio:setEnabled',
       'jyaudio:status', 'jyaudio:syncNow', 'jyfonts:scan', 'jyfonts:serverList', 'jyfonts:upload',
-      'jytpl:deleteServer', 'jytpl:list', 'jytpl:sync', 'lut:list',
+      // jytpl:install（2026-09-30：文字模板预设「服务端→本机剪映」自动安装）
+      'jytpl:deleteServer', 'jytpl:install', 'jytpl:list', 'jytpl:sync', 'lut:list',
       // 本地 montage 族（Step2-4 工作包宿主侧：裁边/拼接/成片校验/坏片删除/清缓存）
       'montage:clearCache', 'montage:concatClips', 'montage:deleteBadFinal', 'montage:trimEdgeClips', 'montage:validateFinal',
     ])
