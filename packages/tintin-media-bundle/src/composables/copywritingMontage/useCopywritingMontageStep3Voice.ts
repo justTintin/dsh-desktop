@@ -880,6 +880,12 @@ function clearVoiceProgressListener(): void {
     if (!groups.length) return
     await ensureServerUrl()
     const base = serverUrl.value.replace(/\/$/, '')
+    // 响应式代理修复（2026-09-30 实测：恢复 23 段入池成功、toast 已弹，但 12 张分镜
+    // 卡仍全部「未绑定素材」、storyboards 持久化 clipGroupsNonEmpty=0）——
+    // addStoryboardTab 返回的是原始对象，直接改写其 clipGroups 不触发任何依赖更新
+    // （界面 computed 缓存不刷新、A5 深度持久化 watch 不触发）。经 storyboards
+    // 数组重新解析出代理对象再写。
+    const live = storyboards.value.find((t) => t.id === tab.id) ?? tab
     let nextIdx = scenes.value.reduce((m, s) => Math.max(m, s.idx), 0)
     const byServerPath = new Map(scenes.value.map((s) => [s.serverPath, s.idx]))
     let restored = 0
@@ -917,7 +923,7 @@ function clearVoiceProgressListener(): void {
         }
         idxs.push(idx)
       }
-      if (idxs.length) { tab.clipGroups[i] = idxs; restored += idxs.length }
+      if (idxs.length) { live.clipGroups[i] = idxs; restored += idxs.length }
     })
     if (restored) {
       notify('素材绑定已恢复', `脚本携带的绑定组已按服务端标识入池重建（${restored} 段）；若片段已不在服务端，重新智能匹配即可重建。`)
