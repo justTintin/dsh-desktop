@@ -41,7 +41,7 @@ const {
   // 编排层 threshold 仍以默认 50 传服务端，行为不变）
   srcVideos, srcDurations, minSceneLen, imageDuration,
   scenes, scoreFilter, splitBusy, splitError, splitMsg, splitProgress,
-  selectFolder, onDrop, removeVideo, runSplit, requestStopSplit, splitStatusOf, updateSceneDesc,
+  selectFolder, onDrop, removeVideo, clearAllVideos, runSplit, requestStopSplit, splitStatusOf, updateSceneDesc,
   previewSourceVideo, previewScene, clearSplitCache, openSplitsDir, splitsDownloading,
   // 动作
   planRowText, selectPlan, startSeqPreview, onSeqEnded,
@@ -145,6 +145,21 @@ const poolSummary = computed(() => {
  *  「绑定的素材已失效」，重新智能匹配即可重建绑定；下次分割会整体重建池并连续重编号 */
 function removePoolScene(idx: number): void {
   scenes.value = scenes.value.filter((s) => s.idx !== idx)
+}
+/** 一键清空素材（2026-09-29 用户裁决：素材很多时逐条 × 删除太慢——标题行加
+ *  「清空素材」，一次移除本地素材 + 选择池全部片段，便于重新选择）。带确认；
+ *  磁盘文件/分割缓存不动；素材库 tab 的待加入勾选一并重置（干净重选）。 */
+function onClearAllMaterials(): void {
+  if (!srcVideos.value.length && !filteredScenes.value.length) return
+  if (!window.confirm(
+    `确定清空全部素材吗？\n`
+    + `将移除本地素材 ${srcVideos.value.length} 个、选择池 ${scenes.value.length} 条片段`
+    + `（分镜绑定关系随之失效，重新智能匹配即可重建）。\n`
+    + `磁盘文件与分割缓存不受影响。`,
+  )) return
+  clearAllVideos()
+  libSelected.value.clear()
+  libMsg.value = ''
 }
 /** 重复标注（2026-09-23 用户裁决：相同文件=文件内容 hash 相同——MD5 主进程流式计算）。
  *  仅本地落盘片段（clipLocalPath）可算；素材库条目未下载前无文件可比对，不参与判重。
@@ -610,6 +625,11 @@ function scoreClass(score: number | undefined): string {
               </svg>
             </button>
             <span v-if="srcListCollapsed && srcVideos.length" class="muted">已折叠，共 {{ srcVideos.length }} 个素材</span>
+            <!-- 2026-09-29 用户裁决：一键清空素材——素材很多时逐条 × 太慢；分割进行中禁用 -->
+            <button class="src-clear-btn" type="button"
+              :disabled="splitBusy || (!srcVideos.length && !filteredScenes.length)"
+              title="清空本地素材与选择池全部片段（磁盘文件不受影响），便于重新选择"
+              @click="onClearAllMaterials">清空素材</button>
           </div>
           <ul v-show="!srcListCollapsed" class="file-list src-video-list">
             <li v-for="(v, i) in srcVideos" :key="v" :title="v" class="split-status-row" :class="'split-' + (splitStatusOf(v) || 'none')">
@@ -952,6 +972,17 @@ function scoreClass(score: number | undefined): string {
 }
 .src-collapse:hover { color: var(--primary); border-color: var(--primary); }
 .src-collapse svg { transition: transform var(--duration-fast); }
+/* 一键清空素材（2026-09-29 用户裁决）：标题行右端 ghost 小按钮，hover 红色警示 */
+.src-clear-btn {
+  margin-left: auto;
+  height: 22px; padding: 0 10px;
+  font-size: 11px; font-weight: 600;
+  color: var(--muted-foreground); background: transparent;
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  cursor: pointer; transition: all var(--duration-fast);
+}
+.src-clear-btn:hover:not(:disabled) { color: var(--destructive, #e5484d); border-color: var(--destructive, #e5484d); }
+.src-clear-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .param-label { font-size: 13px; color: var(--foreground); white-space: nowrap; }
 /* 每脚本视频设置：当前绑定分镜名徽标（2026-09-23 用户裁决：设置按 tab 绑定的可视锚点） */
 .tab-bound-name {

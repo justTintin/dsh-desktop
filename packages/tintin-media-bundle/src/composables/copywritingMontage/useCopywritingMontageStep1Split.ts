@@ -151,6 +151,18 @@ export function useCopywritingMontageStep1Split(ctx: MontageStep1Context) {
     srcVideos.value.splice(i, 1)
   }
 
+  /** 一键清空素材（2026-09-29 用户裁决：素材很多时逐条 × 太慢，需一键清空重新选择）：
+   *  移除全部本地素材 + 选择池片段。仅清列表态——磁盘文件/分割缓存不动
+   *  （clearSplitCache 另有入口）；分割状态随素材清理（断点续分基准重置）；
+   *  预览弹层同步关闭；分镜绑定关系不在此清（方案构建会点名失效，重新智能匹配重建）。
+   *  分割进行中由调用方禁用入口（避免分割回写已清空的行）。 */
+  function clearAllVideos(): void {
+    closePreview()
+    splitStatusByVideo.value = {}
+    srcVideos.value = []
+    scenes.value = []
+  }
+
   /** 混剪任务缓存索引（原版 _montage_job_id = uuid4hex；本轮分割生成一次） */
   // 2026-09-23 用户裁决：任务 ID 持久化——重启沿用同一任务目录，消除
   //  「持久化恢复老任务状态 + 分割又生成新目录」的资产错位；清空缓存时清除
@@ -502,7 +514,7 @@ export function useCopywritingMontageStep1Split(ctx: MontageStep1Context) {
     splitsJobId, splitsDownloading,
     previewUrl, previewTranscoding,
     // fns
-    addVideos, selectFolder, onDrop, removeVideo, runSplit, requestStopSplit, splitStatusOf,
+    addVideos, selectFolder, onDrop, removeVideo, clearAllVideos, runSplit, requestStopSplit, splitStatusOf,
     updateSceneDesc, previewSourceVideo, previewScene, closePreview,
     clearSplitCache, openSplitsDir,
   }

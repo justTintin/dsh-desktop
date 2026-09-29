@@ -133,7 +133,7 @@ export function useCopywritingMontage() {
     splitBusy, splitError, splitMsg, splitProgress, splitResolution, splitFps,
     splitsJobId, splitsDownloading,
     previewUrl, previewTranscoding,
-    addVideos, selectFolder, onDrop, removeVideo, runSplit, requestStopSplit, splitStatusOf,
+    addVideos, selectFolder, onDrop, removeVideo, clearAllVideos, runSplit, requestStopSplit, splitStatusOf,
     updateSceneDesc, previewSourceVideo, previewScene, closePreview,
     clearSplitCache, openSplitsDir,
   } = step1
@@ -453,7 +453,7 @@ export function useCopywritingMontage() {
     srcVideos, srcDurations, threshold, minSceneLen, imageDuration,
     scenes, scoreFilter, filteredScenes, checkedCount,
     splitBusy, splitError, splitMsg, splitProgress, splitResolution, concatProgress,
-    addVideos, selectFolder, onDrop, removeVideo, runSplit, requestStopSplit, splitStatusOf,
+    addVideos, selectFolder, onDrop, removeVideo, clearAllVideos, runSplit, requestStopSplit, splitStatusOf,
     // 文案编写（2026-09-21 用户裁决：高级脚本设置 + AI 生成视频文案与关键词）
     sharedProductInfo, applyScriptProduct, clearScriptProduct,
     manualCopy, manualCopyBusy, activeNarrative, suggestDuration, syncStoryboardsToServer,

@@ -452,7 +452,10 @@ const tabVoices = computed(() => {
 
 /* 左上角框内的分镜声音播放条列表（2026-09-21 用户裁决：克隆完成后就地试听） */
 .carry-voice-list { display: flex; flex-direction: column; gap: 6px; }
+/* 2026-09-29 用户裁决：名称/播放条/时长同一行——名称定宽在左、时长在右，
+   <audio> flex-grow 吃中间剩余宽度（替代旧 260px 定宽） */
 .carry-voice-row { display: flex; align-items: center; gap: 8px; }
+.carry-voice-row .vd-voice-audio { flex: 1 1 auto; width: auto; min-width: 0; }
 .carry-voice-name {
   flex: none; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-size: 12px; font-weight: 600; color: var(--foreground);
