@@ -13,6 +13,7 @@ import TButton from '@/components/common/TButton.vue'
 import TSelect, { type SelectOption } from '@/components/common/TSelect.vue'
 import { useFilePicker } from '@/composables/useFilePicker'
 import { useServerTask } from '@/composables/useServerTask'
+import { acceptFileDragOver } from '@/utils/fileUrl'
 
 /** POST /matting 成功回包（宿主 rembg:submit 落盘后返 {path, bytes}） */
 interface MattingResult {
@@ -109,7 +110,7 @@ const statusText = computed(() => {
       :class="{ 'is-active': isDragging, 'has-file': !!filePath }"
       @click="pickFile"
       @drop.prevent="onDrop"
-      @dragover.prevent="onDragOver"
+      @dragover.prevent="acceptFileDragOver($event); onDragOver()"
       @dragleave.prevent="onDragLeave"
     >
       <svg v-if="!filePath" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">

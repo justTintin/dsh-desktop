@@ -13,6 +13,7 @@ import TSelect from '@/components/common/TSelect.vue'
 import VsrFrameScrubber from '@/components/media-tools/VsrFrameScrubber.vue'
 import { useVsrRemoval } from '@/composables/useVsrRemoval'
 import { useVsrPreviewPane } from '@/composables/useVsrPreviewPane'
+import { acceptFileDragOver } from '@/utils/fileUrl'
 
 const vm = useVsrRemoval()
 const pane = useVsrPreviewPane(vm)
@@ -152,7 +153,7 @@ const {
           :class="{ 'is-active': isDragging, 'has-file': !!fileName }"
           @click="pickFile"
           @drop.prevent="onDrop"
-          @dragover.prevent="onDragOver"
+          @dragover.prevent="acceptFileDragOver($event); onDragOver()"
           @dragleave.prevent="onDragLeave"
         >
           <svg v-if="!fileName" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">

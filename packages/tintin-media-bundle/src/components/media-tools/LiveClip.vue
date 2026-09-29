@@ -30,6 +30,7 @@
 import { ref, computed, watch, type Ref } from 'vue'
 import TButton from '@/components/common/TButton.vue'
 import TSelect, { type SelectOption } from '@/components/common/TSelect.vue'
+import { acceptFileDragOver } from '@/utils/fileUrl'
 import {
   buildClipPlan, buildPlanFromText, mergeLlmPlan,
   buildLlmChunks, buildLlmPrompt, parseLlmPlanResponse,
@@ -511,7 +512,7 @@ function fmt(sec: number): string {
     <!-- Step 0: 分析与热点 -->
     <template v-if="step === 0">
       <section class="card">
-        <div class="dropzone" @click="pickVideo" @drop.prevent="onDrop" @dragover.prevent="isDragging = true" @dragleave.prevent="isDragging = false">
+        <div class="dropzone" @click="pickVideo" @drop.prevent="onDrop" @dragover.prevent="acceptFileDragOver($event); isDragging = true" @dragleave.prevent="isDragging = false">
           <span class="dz-main">{{ videoName || '拖入直播录像 或 点击选择（支持 40GB+，流式处理）' }}</span>
           <span class="dz-hint">支持 mp4 / mov / avi / mkv / flv / ts / webm / m4v</span>
         </div>

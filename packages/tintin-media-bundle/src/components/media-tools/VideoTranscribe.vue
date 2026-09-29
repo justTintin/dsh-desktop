@@ -17,6 +17,7 @@ import TButton from '@/components/common/TButton.vue'
 import TSelect, { type SelectOption } from '@/components/common/TSelect.vue'
 import VideoPlayer from '@/components/common/VideoPlayer.vue'
 import { useTranscribeQueue, STATUS_TEXT } from '@/composables/useTranscribeQueue'
+import { acceptFileDragOver } from '@/utils/fileUrl'
 import type { QueueStatus } from '@/composables/useTranscribeQueue'
 import type { SrtSegment } from '@/composables/srtUtils'
 import { caretToTime } from '@/composables/srtUtils'
@@ -160,7 +161,7 @@ function applyRewrite(): void {
       :class="{ 'is-active': isDragging }"
       @click="pickFiles"
       @drop.prevent="onDrop($event); isDragging = false"
-      @dragover.prevent="isDragging = true"
+      @dragover.prevent="acceptFileDragOver($event); isDragging = true"
       @dragleave.prevent="isDragging = false"
     >
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">

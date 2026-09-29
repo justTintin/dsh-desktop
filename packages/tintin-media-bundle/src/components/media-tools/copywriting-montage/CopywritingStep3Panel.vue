@@ -10,7 +10,7 @@ import TButton from '@/components/common/TButton.vue'
 import TSelect from '@/components/common/TSelect.vue'
 import VdStepBar from '../VdStepBar.vue'
 import { useFilePicker } from '@/composables/useFilePicker'
-import { toFileUrl } from '@/utils/fileUrl'
+import { toFileUrl, acceptFileDragOver } from '@/utils/fileUrl'
 import { copywritingMontageShellKey } from './copywritingMontageUiContext'
 import CopywritingStoryboard from './CopywritingStoryboard.vue'
 
@@ -219,7 +219,7 @@ const tabVoices = computed(() => {
         :class="{ 'is-active': nsDragging, 'has-file': !!nsFilePath }"
         @click="pickNsFile"
         @drop.prevent="onNsDropForward"
-        @dragover.prevent="onNsDragOver(); nsDragging = true"
+        @dragover.prevent="acceptFileDragOver($event); onNsDragOver(); nsDragging = true"
         @dragleave.prevent="onNsDragLeave(); nsDragging = false"
       >
         <svg v-if="!nsFilePath" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">

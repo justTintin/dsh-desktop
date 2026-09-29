@@ -40,3 +40,17 @@ export function filePathOf(f: File): string {
   const legacy = (f as File & { path?: string }).path
   return typeof legacy === 'string' ? legacy : ''
 }
+
+/**
+ * dragover 接受态修正（2026-09-29 实测根因修复）：Windows 标准用户会话下拖入
+ * 文件时 dataTransfer.dropEffect 进来即为 'none'（effectAllowed='all' 亦然），
+ * 仅 preventDefault 而不重设 dropEffect 时，Chromium 持续显示禁止光标且 drop
+ * 事件永不触发——实测 dragover 27 次 / drop 0 次，管理员会话机器不复现。
+ * dragover 中显式置 'copy' 后实测恢复（打包版注入探针 A/B 验证，用户确认）。
+ * 所有文件拖放点的 dragover 统一经此修正。
+ */
+export function acceptFileDragOver(e: DragEvent): void {
+  if (e.dataTransfer && e.dataTransfer.types.includes('Files')) {
+    e.dataTransfer.dropEffect = 'copy'
+  }
+}

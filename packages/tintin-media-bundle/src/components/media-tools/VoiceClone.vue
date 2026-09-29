@@ -11,6 +11,7 @@ import TButton from '@/components/common/TButton.vue'
 import TSelect from '@/components/common/TSelect.vue'
 import { useFilePicker } from '@/composables/useFilePicker'
 import { useVoiceCloneStudio } from '@/composables/useVoiceCloneStudio'
+import { acceptFileDragOver } from '@/utils/fileUrl'
 import { clientError, clientInfo } from '@/utils/clientLog'
 
 const s = useVoiceCloneStudio()
@@ -397,7 +398,7 @@ onMounted(loadCatalog)
         :class="{ 'is-active': isDragging, 'has-file': !!newSampleFilePath }"
         @click="pickUploadFile"
         @drop.prevent="onDropForward"
-        @dragover.prevent="onDragOver(); isDragging = true"
+        @dragover.prevent="acceptFileDragOver($event); onDragOver(); isDragging = true"
         @dragleave.prevent="onDragLeave(); isDragging = false"
       >
         <svg v-if="!newSampleFilePath" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">

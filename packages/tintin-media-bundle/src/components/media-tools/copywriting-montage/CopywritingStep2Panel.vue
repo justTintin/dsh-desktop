@@ -19,6 +19,7 @@ import { fetchMaterialGrid, fetchMaterialDistinct, type PickerItem } from '@/com
 import { buildMediaServeUrl, buildMediaThumbUrl } from '@/composables/workbenchChatContext'
 import { errText, notify } from '@/composables/copywritingMontage/context'
 import { clientError } from '@/utils/clientLog'
+import { acceptFileDragOver } from '@/utils/fileUrl'
 import CopywritingStoryboard from './CopywritingStoryboard.vue'
 import { copywritingMontageShellKey } from './copywritingMontageUiContext'
 
@@ -607,7 +608,7 @@ function scoreClass(score: number | undefined): string {
         </div>
 
         <template v-if="sourceTab === '本地上传'">
-          <div class="dropzone" @click="selectFolder" @drop.prevent="onDrop" @dragover.prevent>
+          <div class="dropzone" @click="selectFolder" @drop.prevent="onDrop" @dragover.prevent="acceptFileDragOver">
             <span class="dz-main">拖入素材文件夹（自动遍历子文件夹内全部视频） 或 点击选择文件夹</span>
             <span class="dz-hint">支持 mp4 / mov / avi / mkv / flv / webm / m4v，服务端完成分割与逐镜分析</span>
           </div>

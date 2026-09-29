@@ -12,6 +12,7 @@ import TButton from '@/components/common/TButton.vue'
 import TSelect from '@/components/common/TSelect.vue'
 import { useFilePicker } from '@/composables/useFilePicker'
 import { useViralClone } from '@/composables/useViralClone'
+import { acceptFileDragOver } from '@/utils/fileUrl'
 import { productDisplayName } from '@/composables/viralCloneLogic'
 
 const vc = useViralClone()
@@ -112,7 +113,7 @@ watch(selectedWfId, () => onWfChanged())
             :class="{ 'is-active': isDragging, 'has-file': !!pickPath || !!sourceVideoPath }"
             @click="pickFile"
             @drop.prevent="onDropForward"
-            @dragover.prevent="onDragOver(); isDragging = true"
+            @dragover.prevent="acceptFileDragOver($event); onDragOver(); isDragging = true"
             @dragleave.prevent="onDragLeave(); isDragging = false"
           >
             <svg v-if="!pickPath && !sourceVideoPath" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
