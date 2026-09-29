@@ -69,6 +69,7 @@ import {
   type ProfileCompatibilityIssue
 } from './state/profile-compatibility'
 import { ensureStoreDirPinned, inspectStoreConsistency } from './state/profile-store'
+import { reanchorStaleHostLinks } from './state/profile-host-links'
 import { LanMobileBridge } from './mobile/lan-mobile-bridge'
 import { createFilePairingPinStore, pairingPinStorePath } from './mobile/pairing-pin-store'
 import {
@@ -1478,6 +1479,18 @@ function launchHarness(): Promise<void> {
         enforcePendingPluginRemovals(dshHome, (line) => runtime.note(line)),
       prepareGenerationsForLaunch: () =>
         prepareGenerationsForLaunch(dshHome, (line) => runtime.note(line)),
+      reanchorHostModuleLinks: async () => {
+        const result = await reanchorStaleHostLinks({
+          profileNodeModules: join(dshHome, 'profiles', 'node_modules'),
+          currentHostNodeModules: join(bundledRuntimeRoot(), 'node_modules'),
+          note: (line) => runtime.note(line)
+        })
+        if (result.failed.length > 0) {
+          for (const failure of result.failed.slice(0, 5)) {
+            runtime.note(`[desktop] host module link ${failure.name} could not be re-anchored: ${failure.detail}`)
+          }
+        }
+      },
       shouldDeferProfileMaintenance: () => shouldDeferProfileMaintenance(dshHome),
       migrateProfileToGenerations: () =>
         migrateProfileToGenerations({

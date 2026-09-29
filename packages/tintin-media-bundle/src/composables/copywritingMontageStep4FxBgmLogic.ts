@@ -12,11 +12,8 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { pathBasename } from './copywritingMontageCommonLogic.ts'
-import {
-  countChars,
-  splitTextIntoSentences,
-  validateLlmSplit,
-} from './voiceCloneLogic.ts' // 带 .ts 扩展名：node --test 类型剥离直载约定（同 visionLogic.ts 口径）
+// voiceCloneLogic 拆句族（countChars/splitTextIntoSentences/validateLlmSplit）已随
+// 逐行拆句退役删除（2026-09-29 报障：品牌词被半角 ! 跨任务切碎）；本文件无消费
 
 // ── Step4 成片混音（/montage/bgm，对照 FinalMixWorker 口径服务端化）──
 

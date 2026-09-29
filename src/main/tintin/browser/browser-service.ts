@@ -30,6 +30,9 @@ import { createDownloadManager, type DownloadManager } from './download-manager'
 import { createMediaStorage, type MediaStorage } from './media-storage'
 import { captureHotspots } from './hotspot-capture'
 import { startLoopbackService, type LoopbackService } from './loopback-service'
+import { scanDailyAssets, resolveDailyAssetDirs } from './daily-assets-logic'
+import { createMediaSniffer, type MediaSniffer } from './media-sniffer'
+import { createCreatorsStoreIpc } from './creators-store'
 // 自动上架编排（SRC auto-listing/* 纯 JS 移植件；类型声明见 auto-listing/ipc.d.ts）
 // @ts-expect-error 纯 JS ESM 移植件（附 ipc.d.ts 通配声明）
 import { createAutoListingIpc } from './auto-listing/ipc.js'
@@ -184,6 +187,8 @@ let loopback: LoopbackService | null = null
 // 浏览器窗口页面（build/tintin-browser.html，2026-09-28 用户裁决：整体按原客户端
 // 实现——页面承载工具条/左栏/右栏/下载栏，原生视图按页面宿主矩形覆盖）
 let pageHostRect: { x: number; y: number; width: number; height: number } | null = null
+// 媒体嗅探（SRC webview 注入方案的壳侧等价；按平台分区缓冲，页面拉取）
+let mediaSniffer: MediaSniffer | null = null
 const pageDownloads = new Map<string, { taskId: string; file: string; percent: number; state: string; speed?: number }>()
 
 function platformOf(p: string | null): PlatformDef | null {
@@ -456,6 +461,7 @@ export function registerBrowserService(mainWindow: BrowserWindow): void {
     for (const platform of Object.keys(PLATFORM_COOKIE_DOMAINS)) {
       try {
         session.fromPartition(PLATFORM_DEFS[platform]!.partition).cookies.on('changed', () => scheduleCookieSync(platform))
+        mediaSniffer?.attach(session.fromPartition(PLATFORM_DEFS[platform]!.partition), platform)
       } catch (err) {
         ctxLog(`cookie watch failed for ${platform}: ${err instanceof Error ? err.message : err}`)
       }
@@ -589,6 +595,59 @@ export function registerBrowserService(mainWindow: BrowserWindow): void {
       else { ensureBrowserView(platformId); attachToWindow() }
       return activeView() ?? ensureBrowserView(platformId)
     },
+  })
+
+  // browser:getDailyAssets/revealFile/openFilePath — 每日素材（B9，SRC daily-assets.js
+  // 移植；扫描下载目录按日期分组；预览/筛选在页面完成）。目录集=工作区 materials 根 +
+  // 系统下载目录（download-manager 落盘根与 SRC store/downloadDir 同源口径）。
+  ipcMain.handle('browser:getDailyAssets', async () => {
+    try {
+      const groups = scanDailyAssets(resolveDailyAssetDirs({
+        configured: workspaceDir(),
+        downloadDir: join(workspaceDir(), 'materials'),
+        systemDownloads: app.getPath('downloads'),
+      }))
+      return { success: true, data: groups }
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+  ipcMain.handle('browser:revealDailyAsset', (_e, p: unknown) => {
+    const path = String(p || '')
+    try {
+      if (!path) return { success: false, error: '路径为空' }
+      shell.showItemInFolder(path)
+      return { success: true }
+    } catch (err) { return { success: false, error: err instanceof Error ? err.message : String(err) } }
+  })
+  // browser:sniffList/sniffClear/sniffDownload — 媒体嗅探（SRC SniffTab 数据面；
+  // 壳侧 webRequest 采集，attach 覆盖平台分区 session 与独立窗口 view）
+  mediaSniffer = createMediaSniffer()
+  ipcMain.handle('browser:sniffList', (_e, platform: unknown) => {
+    return { success: true, data: mediaSniffer!.items(String(platform || '')) }
+  })
+  ipcMain.handle('browser:sniffClear', (_e, platform: unknown) => {
+    mediaSniffer!.clear(String(platform || '') || undefined)
+    return { success: true }
+  })
+  ipcMain.handle('browser:sniffDownload', async (_e, payload: unknown) => {
+    const p = (payload || {}) as { url?: unknown }
+    const url = String(p.url || '')
+    if (!/^https?:\/\/.*/.test(url)) return { success: false, error: '非法媒体地址' }
+    const tail = decodeURIComponent(new URL(url).pathname.split('/').pop() || 'media.mp4').slice(0, 120) || 'media.mp4'
+    const taskId = await downloadManager!.startUrlDownload(url, join(workspaceDir(), 'materials', tail))
+    return { success: true, taskId }
+  })
+
+  createCreatorsStoreIpc(ipcMain, { app, getBrowserWindow: () => browserWindow })
+
+  ipcMain.handle('browser:openDailyAsset', async (_e, p: unknown) => {
+    const path = String(p || '')
+    try {
+      if (!path) return { success: false, error: '路径为空' }
+      const err = await shell.openPath(path)
+      return err ? { success: false, error: err } : { success: true }
+    } catch (err) { return { success: false, error: err instanceof Error ? err.message : String(err) } }
   })
 
   // browser:captureHotspots — 手动触发今日热点采集（SRC scheduled:captureHotspots

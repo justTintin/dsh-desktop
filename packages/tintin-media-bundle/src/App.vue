@@ -3,7 +3,8 @@
 // 2026-09-24 用户裁决：分组对齐原客户端 views/MediaTools.vue（文案脚本模板/图形/
 // 音频/视频 四组；智能混剪按 A1 裁决永久不移植故不列卡）；未移植卡以「建设中」
 // 角标占位（不可点，恢复一张加一张卡）。已可用：文案混剪、剪映模板、声音克隆、
-// 图像抠图、音频生成、参考视频下载（2026-09-25 用户裁决随产品资料批次移植）。
+// 图像抠图、参考视频下载（2026-09-25 用户裁决随产品资料批次移植）；素材库
+// （2026-09-29 由「音频生成」卡升级：视频/图片素材库 + 音频页原音频生成）。
 import { computed, onMounted, ref, watch } from 'vue'
 import CopywritingMontage from './components/media-tools/copywriting-montage/CopywritingMontage.vue'
 // 剪映模板卡启用（2026-09-24 用户裁决：去掉「建设中」，可用）：组/子类目两级浏览 +
@@ -13,9 +14,10 @@ import JianYingTemplates from './components/media-tools/JianYingTemplates.vue'
 import VoiceClone from './components/media-tools/VoiceClone.vue'
 // 图像抠图（2026-09-25 用户裁决移植）：POST /matting 同步抠图，PNG 落盘原图旁
 import ImageMatting from './components/media-tools/ImageMatting.vue'
-// 音频生成（2026-09-25 用户裁决移植）：音频库列表（语义搜索/分类/试听/下载/删除）
-// + BGM/音效生成（生成即归档本地 + 一键入库）
-import AudioGen from './components/media-tools/AudioGen.vue'
+// 素材库（2026-09-29 用户裁决：原「音频生成」卡升级）——三 tab 视频/图片/音频：
+// 图视域=服务端素材库检索/预览/多选/下载（形态对齐会话「选择素材」弹窗），
+// 音频 tab=原音频生成界面与功能原样内嵌（AudioGen 随本组件挂载）
+import MaterialLibrary from './components/media-tools/MaterialLibrary.vue'
 // 参考视频下载（2026-09-25 用户裁决移植）：YouTube/Bilibili 链接解析 → 档位下载
 // （yt-dlp 门 + 浏览器登录态 cookies）
 import VideoDownload from './components/media-tools/VideoDownload.vue'
@@ -66,7 +68,7 @@ const GROUPS: Array<{ group: string; tools: ToolCard[] }> = [
   {
     group: '音频',
     tools: [
-      { id: 'audio-gen', title: '音频生成', desc: 'AI 生成 BGM / 音效，一键入库', emoji: '🔊', accent: 'linear-gradient(135deg,#14B8A6 0%,#0EA5E9 100%)' },
+      { id: 'material-library', title: '素材库', desc: '视频 / 图片素材浏览下载，音频页含 AI 生成 BGM / 音效', emoji: '🗂️', accent: 'linear-gradient(135deg,#14B8A6 0%,#0EA5E9 100%)' },
       { id: 'voice-clone', title: '声音克隆', desc: '克隆音色生成配音', emoji: '🎵', accent: 'linear-gradient(135deg,#8B5CF6 0%,#EC4899 100%)' },
     ],
   },
@@ -174,7 +176,7 @@ onMounted(() => {
       <LiveClip v-else-if="active === 'live-slice'" />
       <CoverMaker v-else-if="active === 'cover-design'" />
       <ImageMatting v-else-if="active === 'image-matting'" />
-      <AudioGen v-else-if="active === 'audio-gen'" />
+      <MaterialLibrary v-else-if="active === 'material-library'" />
       <VideoDownload v-else-if="active === 'video-download'" />
     </div>
   </div>

@@ -9,6 +9,8 @@ import { computed, onMounted, ref } from 'vue'
 // 产品资料（2026-09-25 用户裁决移植）：仓库同步/树/表单增删改/智能挖掘/全量挖掘
 // + 内嵌文案生成面板（OtCopywritingPanel）
 import OtProductLibrary from './components/ops-tools/OtProductLibrary.vue'
+// 自动上架（2026-09-29 用户裁决：UI 入口=运营工具卡；引擎=壳侧浏览器 fxg 分区）
+import OtAutoListingPanel from './components/ops-tools/OtAutoListingPanel.vue'
 
 interface ToolCard {
   id: string
@@ -38,6 +40,8 @@ const GROUPS: Array<{ group: string; tools: ToolCard[] }> = [
   {
     group: '视频运营',
     tools: [
+      // 2026-09-29 用户裁决：自动上架 UI 入口=运营工具卡（引擎=壳侧浏览器 fxg 分区）
+      { id: 'auto-listing', title: '自动上架', desc: '数据包校验 → 抖店工作台自动铺货（引擎在内置浏览器）', emoji: '🛒', accent: 'linear-gradient(135deg,#2563EB 0%,#7C3AED 100%)' },
       { id: 'video-score', title: '视频评价预测', desc: '关键帧 → 视觉模型预测视频表现', emoji: '📈', accent: 'linear-gradient(135deg,#F59E0B 0%,#EF4444 100%)', disabled: true },
       { id: 'video-marketing', title: '视频营销检测', desc: '研判是否营销视频 + 品类 + 改进建议', emoji: '🎯', accent: 'linear-gradient(135deg,#10B981 0%,#14B8A6 100%)', disabled: true },
     ],
@@ -120,6 +124,7 @@ onMounted(() => {
           </div>
         </div>
         <OtProductLibrary v-if="active === 'product-library'" />
+        <OtAutoListingPanel v-else-if="active === 'auto-listing'" />
       </div>
   </div>
 </template>

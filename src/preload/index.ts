@@ -212,6 +212,31 @@ contextBridge.exposeInMainWorld('dshDesktopBrowser', {
   /** 运行平台抽取脚本（SRC browser:extractDOM 契约：成功 {ok,data}、失败 {ok:false,error:{type,message,hint}}） */
   extractDOM: (platform: string): Promise<{ ok: boolean; data?: unknown; error?: { type: string; message: string; hint?: string } }> =>
     ipcRenderer.invoke('browser:extractDOM', platform),
+  // ── 每日素材（B9，SRC daily-assets.js 三通道移植，2026-09-29）──
+  getDailyAssets: (): Promise<{ success: boolean; data?: Array<{ date: string; files: Array<{ name: string; path: string; size: number; type: string }> }>; error?: string }> =>
+    ipcRenderer.invoke('browser:getDailyAssets'),
+  // ── 达人库/素材采集（B10，SRC creators-store 五通道 + 进度订阅，2026-09-29）──
+  creatorsGetCreators: (): Promise<{ success: boolean; data?: unknown[] }> => ipcRenderer.invoke('creators:getCreators'),
+  creatorsAddCreator: (creator: { id: string; platform: string; name?: string; homepageUrl?: string }): Promise<{ success: boolean; data?: unknown[] }> => ipcRenderer.invoke('creators:addCreator', creator),
+  creatorsDeleteCreator: (payload: { id: string; platform: string }): Promise<{ success: boolean; data?: unknown[] }> => ipcRenderer.invoke('creators:deleteCreator', payload),
+  creatorsGetCollected: (): Promise<{ success: boolean; data?: unknown[] }> => ipcRenderer.invoke('creators:getCollected'),
+  creatorsCollectFromCreator: (creator: { id: string; platform: string; name?: string; homepageUrl?: string }): Promise<{ success: boolean; data?: { count?: number }; error?: string }> => ipcRenderer.invoke('creators:collectFromCreator', { creator }),
+  onCreatorsProgress: (cb: (p: { phase: string }) => void): (() => void) => {
+    const listener = (_e: unknown, d: { phase: string }): void => cb(d)
+    ipcRenderer.on('creators:collect-progress', listener)
+    return () => { ipcRenderer.removeListener('creators:collect-progress', listener) }
+  },
+  // ── 媒体嗅探（SRC SniffTab 数据面；壳侧 webRequest 采集，2026-09-29）──
+  sniffList: (platform: string): Promise<{ success: boolean; data?: Array<{ url: string; type: string; platform: string; at: number }> }> =>
+    ipcRenderer.invoke('browser:sniffList', platform),
+  sniffClear: (platform: string): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke('browser:sniffClear', platform),
+  sniffDownload: (payload: { url: string }): Promise<{ success: boolean; taskId?: string; error?: string }> =>
+    ipcRenderer.invoke('browser:sniffDownload', payload),
+  revealDailyAsset: (path: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('browser:revealDailyAsset', path),
+  openDailyAsset: (path: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('browser:openDailyAsset', path),
   // ── 扩展管理（SRC browser:extension* 三通道 + 变更广播）──
   extensionList: (): Promise<{ success: boolean; data?: { installed: boolean; extensions: Array<{ id: string; name: string; version: string; builtin?: boolean; description?: string }> } }> =>
     ipcRenderer.invoke('browser:extensionList'),

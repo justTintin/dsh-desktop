@@ -30,6 +30,12 @@ export interface ProfileStartupMaintenanceDeps {
   shouldDeferProfileMaintenance: () => Promise<boolean>
   migrateProfileToGenerations: () => Promise<MigrationOutcome>
   ensureMarketBaseline: () => Promise<void>
+  /**
+   * Re-point the shared profile module fallback's stale installation links at
+   * the running installation. Fail-open by design: this must never block a
+   * boot, so implementations swallow per-entry errors into their report.
+   */
+  reanchorHostModuleLinks: () => Promise<void>
   /** Whether the market already installed can carry this boot on its own. */
   marketUsableWithoutBaseline: () => Promise<boolean>
   reportProfileConsistency: () => Promise<void>
@@ -65,6 +71,20 @@ export interface ProfileStartupMaintenanceDeps {
 export async function runProfileStartupMaintenance(
   deps: ProfileStartupMaintenanceDeps
 ): Promise<ProfileStartupMaintenanceResult> {
+  // Strictly fail-open: a broken re-anchor leaves the previous link state in
+  // place and must never cost the user their normal Profile.
+  const reanchorHostLinksSafely = async (): Promise<void> => {
+    try {
+      await deps.reanchorHostModuleLinks()
+    } catch (error) {
+      deps.note(
+        `[desktop] host module link re-anchoring failed, keeping the previous links: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      )
+    }
+  }
+
   const reportConsistency = async (): Promise<void> => {
     try {
       await deps.reportProfileConsistency()
@@ -232,6 +252,7 @@ export async function runProfileStartupMaintenance(
       deps.note(`[desktop] normal profile maintenance blocked: ${reason}`)
       return { outcome: 'safe-recovery', reason }
     }
+    await reanchorHostLinksSafely()
     deps.note(
       '[desktop] profile package maintenance deferred while plugin removal is pending verification'
     )
@@ -271,6 +292,10 @@ export async function runProfileStartupMaintenance(
     deps.note(`[desktop] normal profile maintenance blocked: ${reason}`)
     return { outcome: 'safe-recovery', reason }
   }
+  // After projection (which owns generation links), re-anchor stale
+  // installation links so the shared closure imports the running
+  // installation's packages, never a prior release directory's.
+  await reanchorHostLinksSafely()
   await reportConsistency()
   // A rebuilt tree is verified by the existing real launch + rollback flow.
   // Preflight reused trees here, where legacy-intact alone cannot prove that

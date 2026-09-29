@@ -1,26 +1,21 @@
 // ═══════════════════════════════════════════════════════════════
-// useVoiceCloneStudio — 声音克隆·转写取词/LLM 分句/逐行生成（条目④ 业务层）
+// useVoiceCloneStudio — 声音克隆（条目④ 业务层）
 // 对照原客户端 studio/gui/voice_clone_page.py：
 //   · _transcribe_ref_audio L690-743（ASR → segments_to_plain →
 //     PunctuationLLMWorker 标点优化，失败降级原文 L723-726）
-//   · _split_and_populate_text_only L1566-1613（SentenceSplitterLLMWorker →
-//     _validate_llm_split 漏字回退本地 L1583-1586 → _merge_short_fragments → 填表）
-//   · _run_synthesize L1197-1249（分行克隆：无文案拦截 L1230-1232、
-//     逐行任务、行级进度/失败）
-//   · _estimate_max_chars L890-913（样本语速 = 样本文案字数 / 样本音频时长，
-//     经 ffmpeg.probe 取时长；拿不到退回 4字/秒兜底）
 // 纯逻辑在 voiceCloneLogic.ts（parser/builder 层），本文件仅编排（runner 层）
+// 2026-09-29 用户裁决：删除「一键拆分填充」按钮与逐行文案表——整体克隆
+// （服务端拆句拼接）已覆盖主路径，逐行模式无消费。行表编排与语速推算
+// （_split_and_populate_text_only/_run_synthesize/_estimate_max_chars 对照层）
+// 一并移除；voiceCloneLogic.ts 纯逻辑模块保留（转写标点等多消费者共用）。
+// 2026-09-29 用户裁决（客户端职责边界）：客户端不做任何音频归一化/预处理，
+// 只负责上传四样——声音样本文件、样本文案（ref_text/text）、要克隆的文案
+// （text）、调整参数（engine/ duration_factor/emo 等）；响度治理归服务端。
 // ═══════════════════════════════════════════════════════════════
 
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import {
   PUNCTUATION_SYSTEM_PROMPT,
-  SENTENCE_SPLIT_SYSTEM_PROMPT,
-  estimateMaxChars,
-  mergeShortFragments,
-  splitTextIntoSentences,
-  validateLlmSplit,
-  extractLlmLines,
   extractLlmContent,
 } from './voiceCloneLogic'
 import { parseTranscriptionResponse, segmentsToPlainText } from './srtUtils'
@@ -86,18 +81,6 @@ async function getVoiceCloneSaveDir(): Promise<string> {
   return base ? `${base.replace(/[/\\]+$/, '')}/${VOICE_CLONE_SUBDIR}` : VOICE_CLONE_SUBDIR
 }
 
-/** 逐行配音文案行状态（对照行级状态标签） */
-export type RowStatus = 'idle' | 'running' | 'done' | 'failed'
-
-export interface VoiceRow {
-  text: string
-  status: RowStatus
-  audioUrl: string
-  audioPath?: string  // 本地文件路径（命名规范落盘后）
-  error: string
-  engine?: 'voxcpm2' | 'voxcpm' | 'indextts' | 'qwen3'  // 生成所用模型（切换引擎时用于清理旧结果/展示标注）
-}
-
 /** 音色/样本目录项（来自 /voices/list、/voices/samples） */
 export interface CatalogItem {
   id: string
@@ -157,13 +140,9 @@ export function useVoiceCloneStudio() {
   const ttsEmoText = ref('')           // 情感文字（如：开心、悲伤、激动）
   const ttsEmoAlpha = ref(0.5)         // 情感强度 0~1，默认 0.5
 
-  // ── 文案与行表 ──
+  // ── 文案 ──
   const wholeText = ref('')
-  const rows = ref<VoiceRow[]>([])
-  const splitting = ref(false)
-  const generating = ref(false)
   const stageText = ref('')
-  const maxChars = ref(60) // 单行字数上限（样本语速推算，对照 _estimate_max_chars）
 
   // ── 整体合成（原「整体克隆人声」入口保留；task_id 异步经 /tasks/{id} 轮询）──
   const wholeTask = useServerTask({
@@ -200,7 +179,6 @@ export function useVoiceCloneStudio() {
   const wholeResultPath = computed(() => wholeTask.resultPath.value)
 
   const refReady = computed(() => !!refAudioPath.value || !!selectedSampleId.value)
-  const canSplit = computed(() => !!wholeText.value.trim() && !splitting.value)
   const hasRefText = computed(() => !!refText.value.trim())
 
   /** 从服务端响应中提取数组（兼容裸数组 / {items} / {data} / {samples} / {voices} 等包裹格式） */
@@ -256,7 +234,6 @@ export function useVoiceCloneStudio() {
     stopSamplePreview()
     refAudioPath.value = path
     selectedSampleId.value = ''
-    void estimateFromSample()
   }
 
   // ── 样本试听（2026-09-07 用户裁决·对齐原客户端：给播放器一个直接可播的地址）──
@@ -324,7 +301,6 @@ export function useVoiceCloneStudio() {
     // 自动填充样本的参考文字
     const s = samples.value.find((x) => x.id === id)
     if (s?.text) refText.value = s.text
-    void estimateFromSample()
     // 选中样本即加载播放条（2026-09-07 用户要求：选择样本时就显示播放条，不再单独点试听按钮）
     if (id) void loadSamplePreview(id)
   }
@@ -379,20 +355,6 @@ export function useVoiceCloneStudio() {
     }
   }
 
-  /** 按样本语速推算单行字数上限（对照 _estimate_max_chars：语速 = 字数/时长） */
-  async function estimateFromSample(): Promise<void> {
-    const path = getRefAudioPath()
-    const text = refText.value.trim()
-    if (path) {
-      try {
-        const info = await window.tintin.ffmpeg.probe(path)
-        maxChars.value = estimateMaxChars(Number(info?.duration) || 0, text)
-        return
-      } catch (_) { /* 读时长失败走兜底 */ }
-    }
-    maxChars.value = estimateMaxChars(0, text)
-  }
-
   /** 参考音频转写取词（对照 _transcribe_ref_audio：ASR → LLM 标点 → 失败降级原文） */
   async function transcribeRefAudio(): Promise<void> {
     if (!refReady.value) {
@@ -436,77 +398,12 @@ export function useVoiceCloneStudio() {
         refText.value = plain
         stageText.value = '完成： 识别完成（标点优化失败）'
       }
-      await estimateFromSample()
     } catch (err) {
       stageText.value = '失败： 识别文本失败'
       clientError('voice-clone', '识别文本失败', err)
       notify('识别文本失败', `无法从参考音频中提取文本：\n${err instanceof Error ? err.message : String(err)}`)
     } finally {
       transcribing.value = false
-    }
-  }
-
-  /** 行表操作 */
-  function updateRowText(i: number, text: string): void {
-    const r = rows.value[i]
-    if (r) r.text = text
-  }
-  function removeRow(i: number): void {
-    rows.value.splice(i, 1)
-  }
-  function addRow(): void {
-    rows.value.push({ text: '', status: 'idle', audioUrl: '', audioPath: '', error: '' })
-  }
-  function clearRows(): void {
-    rows.value = []
-  }
-
-  /** 一键拆分填充（对照 _split_and_populate_text_only：LLM → 校验回退 → 合并 → 填表） */
-  async function splitIntoRows(): Promise<void> {
-    const text = wholeText.value.trim()
-    if (!text) {
-      notify('提示', '请先在「待克隆整体文案」输入内容！')
-      return
-    }
-    splitting.value = true
-    stageText.value = '正在使用大模型智能拆分文案...'
-    let usedFallbackLocal = false
-    try {
-      let lines: string[] = []
-      try {
-        const res = await window.tintin.server.llmChat({
-          messages: [
-            { role: 'system', content: SENTENCE_SPLIT_SYSTEM_PROMPT },
-            { role: 'user', content: text },
-          ],
-        })
-        if (!res || (res as any).error) throw new Error((res as any)?.error || 'LLM 离线')
-        lines = extractLlmLines(extractLlmContent(res))
-        // 防漏字保护：疑似漏字/误删编号 → 自动退回本地规则拆分（对照 _validate_llm_split）
-        const fallback = validateLlmSplit(text, lines)
-        if (fallback !== null) {
-          lines = fallback
-          stageText.value = '注意： AI 拆分疑似漏字，已自动退回本地规则拆分'
-        }
-      } catch (_) {
-        // AI 拆分失败 → 本地规则（对照 on_split_err L1599-1606）
-        lines = splitTextIntoSentences(text)
-        usedFallbackLocal = true
-        stageText.value = '注意： AI 智能拆分失败，已自动使用本地规则'
-      }
-      lines = mergeShortFragments(lines, maxChars.value)
-      clearRows()
-      for (const s of lines) {
-        rows.value.push({ text: s, status: 'idle', audioUrl: '', audioPath: '', error: '' })
-      }
-      if (!usedFallbackLocal && stageText.value.startsWith('正在')) {
-        stageText.value = '完成： AI 智能拆分完成'
-      } else if (!usedFallbackLocal) {
-        stageText.value = `完成： 拆分填充 ${rows.value.length} 行`
-      }
-      notify('拆分完成', `已拆分并填入列表，共 ${rows.value.length} 行。`)
-    } finally {
-      splitting.value = false
     }
   }
 
@@ -524,102 +421,6 @@ export function useVoiceCloneStudio() {
     if (res?.audio_base64) return base64ToAudioUrl(res.audio_base64, res.content_type)
     // 契约 /indextts/tts resp=json 音频字段为 audio_url（/output/tts/...）；url 属猜测兜底，删除
     return res?.audio_url || ''
-  }
-
-  /** 单行克隆合成（API-GUIDE：sample_id 引用样本库 + engine 双引擎） */
-  async function generateRow(i: number): Promise<void> {
-    const row = rows.value[i]
-    if (!row) return
-    const sampleUrl = getRefAudioUrl()
-    if (!sampleUrl && !selectedSampleId.value) {
-      notify('未选择声音样本', '请先从样本库选择参考声音样本！')
-      return
-    }
-    if (!row.text.trim()) {
-      notify('文案为空', '该行没有可合成的文案。')
-      return
-    }
-    row.status = 'running'
-    row.error = ''
-    row.engine = ttsEngine.value
-    stageText.value = `正在生成第 ${i + 1} 行的克隆声音（${ttsEngine.value}）...`
-    try {
-      const payload: Record<string, unknown> = {
-        text: row.text.trim(),
-        // API-GUIDE 推荐：sample_id 引用 /voice/samples 样本库
-        ...(selectedSampleId.value ? { sample_id: Number(selectedSampleId.value) } : {}),
-        // 2026-09-20（服务端 TTS 统一入口）：engine=qwen3 → Qwen3-TTS；
-        // ref_text=参考音频文稿（Qwen3 克隆必填，缺失服务端 400）
-        ...(ttsEngine.value !== 'indextts' ? { engine: ttsEngine.value } : {}),
-        ...(ttsEngine.value !== 'indextts' && refText.value.trim() ? { ref_text: refText.value.trim() } : {}),
-        // 2026-09-20 用户裁决：Qwen3 专属设置（预置音色/指令文本）——qwen3 不支持
-        // IndexTTS 的 duration_factor/emo_text/emo_alpha（此前误发致「变速不起作用」）
-        ...(ttsEngine.value === 'qwen3'
-          ? {
-              ...(qwen3Speaker.value ? { speaker: qwen3Speaker.value } : {}),
-              ...(qwen3Instruct.value.trim() ? { instruct: qwen3Instruct.value.trim() } : {}),
-            }
-          : {
-              duration_factor: ttsDurationFactor.value,
-              ...(ttsEmoText.value.trim() ? { emo_text: ttsEmoText.value.trim() } : {}),
-              emo_alpha: ttsEmoAlpha.value,
-            }),
-        resp: 'json',
-      }
-      const res = await window.tintin.server.ttsGenerate(payload as any)
-      if (!res) throw new Error('服务端离线或未返回结果')
-      if ((res as any).error) throw new Error((res as any).error)
-      const url = extractAudioUrl(res)
-      if (!url) throw new Error('未返回音频数据')
-      row.audioUrl = url
-      // 按命名规范保存到 voice_clone 子目录
-      try {
-        const saveDir = await getVoiceCloneSaveDir()
-        const sampleName = samples.value.find((s) => s.id === selectedSampleId.value)?.name || ''
-        const fileName = buildVoiceCloneFileName(row.text.trim(), sampleName, 'row', i + 1, ttsEngine.value)
-        const savePath = `${saveDir}/${fileName}`
-        let localPath = ''
-        if ((res as any).audio_base64) {
-          const saved = await window.tintin.server.ttsSaveAudio({
-            base64: (res as any).audio_base64,
-            savePath,
-          })
-          localPath = typeof saved === 'string' ? saved : ''
-        } else if (url.startsWith('http')) {
-          const saved = await window.tintin.server.downloadResult(url, savePath)
-          localPath = String(saved || '')
-        }
-        if (localPath) row.audioPath = localPath
-      } catch (_) { /* 行级保存失败不影响播放 */ }
-      row.status = 'done'
-    } catch (err) {
-      row.status = 'failed'
-      row.error = err instanceof Error ? err.message : String(err)
-      clientError('voice-clone', `行级生成失败 第 ${i + 1} 行`, row.error)
-      notify('行级生成失败', `第 ${i + 1} 行：${row.error}`)
-    }
-  }
-
-  /** 批量分行克隆 */
-  async function generateAll(): Promise<void> {
-    if (generating.value) return
-    if (!getRefAudioUrl() && !selectedSampleId.value) {
-      notify('未选择声音样本', '请先从样本库选择参考声音样本！')
-      return
-    }
-    const targets = rows.value
-      .map((r, i) => ({ r, i }))
-      .filter(({ r }) => r.text.trim())
-    if (!targets.length) {
-      notify('文案为空', '没有检测到任何配文。请在列表的「配音文案」栏输入内容。')
-      return
-    }
-    generating.value = true
-    for (const { i } of targets) {
-      await generateRow(i)
-    }
-    stageText.value = '完成： 逐行克隆结束'
-    generating.value = false
   }
 
   /** 整体克隆（API-GUIDE：sample_id + engine 双引擎；WAV base64 / audio_url 双响应） */
@@ -814,35 +615,22 @@ export function useVoiceCloneStudio() {
     }
   }
 
-  /** 行音频下载 */
-  function downloadRow(i: number): void {
-    const row = rows.value[i]
-    if (!row?.audioUrl) return
-    const a = document.createElement('a')
-    a.href = row.audioUrl
-    a.download = `voice_${i + 1}.wav`
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-  }
-
   return {
     // state
     refAudioPath, selectedSampleId, refText, transcribing,
     voiceOptions, samples, voice, ttsEngine, wholeEngine, ttsDurationFactor, ttsEmoText, ttsEmoAlpha,
     // Qwen3-TTS 专属（2026-09-20 用户裁决）
     qwen3Speaker, qwen3Instruct, qwen3Voices, qwen3VoicesLoading, loadQwen3Voices,
-    wholeText, rows, splitting, generating, stageText, maxChars,
+    wholeText, stageText,
     wholeTask, wholeProgress,
     // 整体克隆：解包视图 + 合成进度 + 另存为（模板直接用，禁 wholeTask.xxx 裸访问）
     wholeStatus, wholeIsProcessing, wholeErrorMsg, wholeResultUrl, wholeResultPath,
     wholeSynthProgress, saveWholeAudioAs, uploadingToLib, uploadWholeToLibrary,
-    refReady, canSplit, hasRefText, uploadingSample,
+    refReady, hasRefText, uploadingSample,
     samplePreviewUrl, samplePreviewLoading,
     // methods
     loadCatalog, setRefAudio, selectSample, uploadSample, uploadNewSample, transcribeRefAudio,
     loadSamplePreview, stopSamplePreview,
-    splitIntoRows, updateRowText, removeRow, addRow, clearRows,
-    generateRow, generateAll, generateWhole, downloadRow,
+    generateWhole,
   }
 }

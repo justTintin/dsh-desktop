@@ -33,6 +33,7 @@ function startup(ensure: () => Promise<void>): ProfileStartupMaintenanceDeps {
     incompletePluginRestoreId: async () => undefined, preparePackageStore: async () => {},
     demoteMarketGeneration: async () => false,
     enforcePendingPluginRemovals: async () => {}, prepareGenerationsForLaunch: async () => {},
+    reanchorHostModuleLinks: async () => undefined,
     shouldDeferProfileMaintenance: async () => false,
     migrateProfileToGenerations: async () => ({ outcome: 'no-op' }),
     ensureMarketBaseline: ensure, marketUsableWithoutBaseline: async () => false,

@@ -1373,14 +1373,17 @@ function exportMultiToDraft({ videoPaths, videoDurations = null, muteVideoAudio 
             textTplAppended += r.appended
             textTplKwFallbackSegs += r.fallbackSegs
           } catch (_) { /* 模板轨失败不阻断导出（字幕轨仍在） */ }
-          // 音效轨（2026-09-17 用户裁决·定义修正）：跟随文字模板命中位置落段
-          // （位置=关键词命中位置；与花字轨无关）。2026-09-18：音效池来自服务端
-          // 音频库剪映音效库 <2s 条目（sfxPaths 主进程解析注入）
-          appendSfxForVideo(i, cursorUs, cursorUs + clip.durationUs)
         }
+        // 音效轨（2026-09-17 用户裁决·定义修正）：跟随文字模板命中位置落段
+        // （位置=关键词命中位置；与花字轨无关）。2026-09-18：音效池来自服务端
+        // 音频库剪映音效库 <2s 条目（sfxPaths 主进程解析注入）。
+        // 2026-09-29 修复：挪出模板命中 guard——镜级显式音效（sfxClips）不依赖
+        // 模板命中，无命中镜也必须落轨；空事件时池路径自身 no-op。
+        appendSfxForVideo(i, cursorUs, cursorUs + clip.durationUs)
         cursorUs += clip.durationUs
-        // 2026-09-16 用户裁决：视频片段之间添加半秒间隔，所有轨道同步
-        if (i < clips.length - 1) cursorUs += VIDEO_GAP_US
+        // 2026-09-24 用户裁决：片段紧密相接（副轨游标与视频轨同口径，不再推进
+        // 半秒间隙——间隙会让字幕/关键词/音效窗口自第 2 片起逐边界漂移 0.5s，
+        // 与 727a6eb 修的视频轨空隙同根因，当时漏改了这两处游标）
       })
       if (!subtitleTrack.segments.length) tracks.splice(tracks.indexOf(subtitleTrack), 1)
       if (tplTrack && tplTrack.segments.length) tracks.push(tplTrack)
@@ -1397,11 +1400,10 @@ function exportMultiToDraft({ videoPaths, videoDurations = null, muteVideoAudio 
             textTplAppended += r.appended
             textTplKwFallbackSegs += r.fallbackSegs
           } catch (_) {}
-          appendSfxForVideo(i, cursorUs, cursorUs + clip.durationUs)
         }
+        // 2026-09-29 修复：同上——显式音效不依赖模板命中；游标不再推进间隙
+        appendSfxForVideo(i, cursorUs, cursorUs + clip.durationUs)
         cursorUs += clip.durationUs
-        // 2026-09-16 用户裁决：视频片段之间添加半秒间隔，所有轨道同步
-        if (i < clips.length - 1) cursorUs += VIDEO_GAP_US
       })
       if (tplTrack && tplTrack.segments.length) tracks.push(tplTrack)
     }

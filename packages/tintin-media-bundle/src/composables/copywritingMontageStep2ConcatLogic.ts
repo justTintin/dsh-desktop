@@ -178,14 +178,19 @@ export interface PlanShotGroup {
 export const RANDOM_TRANSITION_POOL = ['fade', 'dissolve', 'slideleft'] as const
 
 /** 逐边界转场数组（虚拟时间轴导出用，段序与源裁剪段对齐）：
- *  planFirst 且非首段 = 镜间 → mode（'random' 时从池随机）；镜内片间 = 'none' 硬切。
+ *  shotFirst 且非首段 = 镜间 → mode（'random' 时从池随机）；镜内片间 = 'none' 硬切。
  *  modeOf（2026-09-23 用户裁决：视频设置按 tab 绑定）——传入时镜间转场逐段取该段
- *  所属分镜自己的 mode（缺省回退统一 mode），多分镜脚本各用各的转场。 */
+ *  所属分镜自己的 mode（缺省回退统一 mode），多分镜脚本各用各的转场。
+ *  2026-09-29 修正（用户实测：单脚本 23 镜草稿 0 转场，手加镜间转场演示）：
+ *  0924 裁决"同视频连续镜间不重样；镜内片间硬切"的"镜间"=**每个镜头之间**，
+ *  边界判定应为 shotFirst（每镜首片，与音效挂载同源）；旧实现用 planFirst（分镜
+ *  脚本首段）——"一镜一片"时代两者恒等，"一镜多片"装填引入后偏差显形：单脚本
+ *  多镜工程（镜全在脚本内）被整体判成镜内硬切，导出 0 条转场。 */
 export function buildBoundaryTransitions(
-  segs: Array<{ planFirst: boolean; planKey?: string }>,
+  segs: Array<{ planFirst?: boolean; shotFirst?: boolean; planKey?: string }>,
   mode: string,
   rnd: () => number = Math.random,
-  modeOf?: (seg: { planFirst: boolean; planKey?: string }) => string,
+  modeOf?: (seg: { planFirst?: boolean; shotFirst?: boolean; planKey?: string }) => string,
 ): string[] {
   const pool = RANDOM_TRANSITION_POOL
   const out: string[] = []
@@ -194,7 +199,7 @@ export function buildBoundaryTransitions(
   let planBoundary = 0
   let rotation = Math.floor(rnd() * pool.length)
   for (let j = 1; j < segs.length; j++) {
-    if (!segs[j].planFirst) { out.push('none'); continue }
+    if (!segs[j].shotFirst) { out.push('none'); continue }
     const m = modeOf ? (modeOf(segs[j]) || mode) : mode
     if (m === 'random') {
       out.push(pool[(rotation + planBoundary) % pool.length])

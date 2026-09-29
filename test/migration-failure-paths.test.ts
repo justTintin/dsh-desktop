@@ -226,6 +226,7 @@ describe('migration failure paths (issue #250)', () => {
       demoteMarketGeneration: async () => false,
       enforcePendingPluginRemovals: enforce,
       prepareGenerationsForLaunch: prepare,
+      reanchorHostModuleLinks: async () => undefined,
       shouldDeferProfileMaintenance: async () => false,
       migrateProfileToGenerations: () => migrateProfileToGenerations(migrationDeps),
       ensureMarketBaseline: async () => undefined,
@@ -472,6 +473,7 @@ describe('migration failure paths (issue #250)', () => {
       demoteMarketGeneration: async () => false,
       enforcePendingPluginRemovals: enforce,
       prepareGenerationsForLaunch: prepare,
+      reanchorHostModuleLinks: async () => undefined,
       shouldDeferProfileMaintenance: async () => false,
       migrateProfileToGenerations: migrate,
       ensureMarketBaseline: async () => undefined,
@@ -505,6 +507,7 @@ describe('migration failure paths (issue #250)', () => {
         throw new Error('EPERM: could not persist the removal ledger')
       },
       prepareGenerationsForLaunch: prepare,
+      reanchorHostModuleLinks: async () => undefined,
       shouldDeferProfileMaintenance: async () => false,
       migrateProfileToGenerations: async () => ({ outcome: 'no-op' }),
       ensureMarketBaseline: async () => undefined,
@@ -537,6 +540,7 @@ describe('migration failure paths (issue #250)', () => {
         }
       },
       prepareGenerationsForLaunch: async () => undefined,
+      reanchorHostModuleLinks: async () => undefined,
       shouldDeferProfileMaintenance: async () => false,
       migrateProfileToGenerations: async () => ({ outcome: 'no-op' }),
       ensureMarketBaseline: async () => undefined,
@@ -562,6 +566,7 @@ describe('migration failure paths (issue #250)', () => {
       preparePackageStore: async () => undefined,
       demoteMarketGeneration: async () => false,
       enforcePendingPluginRemovals: async () => undefined,
+      reanchorHostModuleLinks: async () => undefined,
       prepareGenerationsForLaunch: async () => {
         throw new Error('projection fixture failure')
       },

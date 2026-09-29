@@ -1,8 +1,10 @@
 <script setup lang="ts">
 // ═══════════════════════════════════════════════════════════════
 // VoiceClone.vue — 声音克隆（重新设计：样本下拉 + 底部上传）
-// 布局：TTS引擎 → 样本选择(下拉) → 参考文本 → 待克隆文案 → 克隆/拆分
+// 布局：TTS引擎 → 样本选择(下拉) → 参考文本 → 待克隆文案 → 整体克隆
 //       底部：上传新样本（音频+名称+文字 → 服务端 → 自动刷新下拉）
+// 2026-09-29 用户裁决：删除「一键拆分填充」按钮与逐行文案表——整体克隆
+// （服务端拆句拼接）已覆盖主路径，逐行模式无消费。
 // ═══════════════════════════════════════════════════════════════
 import { ref, computed, onMounted, watch } from 'vue'
 import TButton from '@/components/common/TButton.vue'
@@ -10,7 +12,6 @@ import TSelect from '@/components/common/TSelect.vue'
 import { useFilePicker } from '@/composables/useFilePicker'
 import { useVoiceCloneStudio } from '@/composables/useVoiceCloneStudio'
 import { clientError, clientInfo } from '@/utils/clientLog'
-import type { RowStatus } from '@/composables/useVoiceCloneStudio'
 
 const s = useVoiceCloneStudio()
 
@@ -23,16 +24,15 @@ const {
   ttsDurationFactor, ttsEmoText, ttsEmoAlpha,
   // Qwen3-TTS 专属（2026-09-20 用户裁决）
   qwen3Speaker, qwen3Instruct, qwen3Voices, qwen3VoicesLoading,
-  wholeText, rows, splitting, generating, stageText, maxChars,
+  wholeText, stageText,
   wholeTask, wholeProgress, uploadingSample,
   // 整体克隆：解包视图 + 合成进度 + 另存为（wholeTask 内嵌 ref 模板不解包，禁直接 wholeTask.xxx 判断）
   wholeStatus, wholeIsProcessing, wholeErrorMsg, wholeResultUrl, wholeResultPath,
   wholeSynthProgress, saveWholeAudioAs, uploadingToLib, uploadWholeToLibrary,
-  refReady, canSplit,
+  refReady,
   samplePreviewUrl, samplePreviewLoading, loadSamplePreview,
   loadCatalog, selectSample, uploadNewSample, transcribeRefAudio,
-  splitIntoRows, updateRowText, removeRow, addRow, clearRows,
-  generateRow, generateAll, generateWhole, downloadRow,
+  generateWhole,
 } = s
 
 /** 情感预设选项（IndexTTS emo_text 常用值） */
@@ -162,16 +162,6 @@ async function transcribeForNewSample(): Promise<void> {
   }
 }
 
-const ROW_STATUS_TEXT: Record<RowStatus, string> = {
-  idle: '待生成',
-  running: '生成中',
-  done: '完成',
-  failed: '失败',
-}
-function rowStatusClass(st: RowStatus): string {
-  return { idle: '', running: 'is-running', done: 'is-done', failed: 'is-failed' }[st] || ''
-}
-
 /** 克隆成功后显示的文件名 */
 const wholeFileName = computed(() => {
   const p = wholeResultPath.value
@@ -221,9 +211,6 @@ onMounted(loadCatalog)
         rows="3"
         placeholder="选择样本后自动填充；也可手动编辑"
       />
-      <span class="form-hint">
-        拆分合并用的单行字数上限：约 {{ maxChars }} 字（15 秒安全时长；由样本语速推算）
-      </span>
     </div>
 
     <!-- ③ 克隆模型（2026-09-20 用户裁决：QwenTTS 启用——服务端 TTS 统一入口
@@ -363,17 +350,6 @@ onMounted(loadCatalog)
           :disabled="!wholeText.trim() || !refReady"
           @click="generateWhole"
         />
-        <TButton
-          label="一键拆分填充"
-          icon="edit"
-          :disabled="!canSplit"
-          :loading="splitting"
-          @click="splitIntoRows"
-        />
-        <span
-          class="hint-link"
-          title="拆分流程：优先 AI 智能断句（不可用退回本地规则）；按样本语速合并短句（单行≤15秒）；AI 疑似漏字自动退回本地拆分，编号一字不丢"
-        >拆分策略说明</span>
       </div>
       <!-- 合成进度（服务端同步等待无真实进度：缓动假进度，完成置 100） -->
       <div v-if="wholeIsProcessing" class="synth-progress">
@@ -412,75 +388,6 @@ onMounted(loadCatalog)
 
     <!-- 阶段提示 -->
     <div v-if="stageText" class="stage-line">{{ stageText }}</div>
-
-    <!--  逐行配音文案表 -->
-    <div v-if="rows.length" class="rows">
-      <div class="rows__head">
-        <span class="rows__title">逐行配音文案（{{ rows.length }} 行）</span>
-        <div class="rows__ops">
-          <TButton label="添加一行" icon="plus" size="small" @click="addRow" />
-          <TButton
-            label="逐行克隆"
-            icon="play"
-            size="small"
-            :disabled="generating"
-            :loading="generating"
-            @click="generateAll"
-          />
-          <TButton label="清空" icon="trash" size="small" :disabled="generating" @click="clearRows" />
-        </div>
-      </div>
-      <div
-        v-for="(row, i) in rows"
-        :key="i"
-        class="row"
-        :class="rowStatusClass(row.status)"
-      >
-        <span class="row__idx">{{ i + 1 }}</span>
-        <input
-          class="row__text"
-          :value="row.text"
-          placeholder="本行配音文案"
-          :disabled="row.status === 'running'"
-          @input="updateRowText(i, ($event.target as HTMLInputElement).value)"
-        />
-        <audio
-          v-if="row.status === 'done' && row.audioUrl"
-          class="row__audio"
-          :src="resolveSrc(row.audioUrl)"
-          controls
-        />
-        <span class="row__status" :class="rowStatusClass(row.status)">
-          {{ ROW_STATUS_TEXT[row.status] }}<template v-if="row.engine && row.status === 'done'"> · IndexTTS</template><template v-if="row.error">：{{ row.error }}</template>
-        </span>
-        <div class="row__actions">
-          <button
-            class="icon-btn"
-            title="生成本行"
-            :disabled="row.status === 'running' || generating"
-            @click="generateRow(i)"
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M5 3l14 9-14 9V3z"/></svg>
-          </button>
-          <button
-            class="icon-btn"
-            title="下载本行音频"
-            :disabled="row.status !== 'done'"
-            @click="downloadRow(i)"
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-          </button>
-          <button
-            class="icon-btn"
-            title="删除本行"
-            :disabled="row.status === 'running' || generating"
-            @click="removeRow(i)"
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-          </button>
-        </div>
-      </div>
-    </div>
 
     <!-- ⑥ 底部：上传新样本 -->
     <div class="upload-section">
@@ -640,10 +547,6 @@ onMounted(loadCatalog)
 .text-input:focus { border-color: var(--primary); }
 
 .action-row { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
-.hint-link {
-  font-size: var(--font-size-caption); color: var(--muted-foreground);
-  cursor: help; text-decoration: underline dotted;
-}
 .upload-progress { font-size: var(--font-size-caption); color: var(--muted-foreground); }
 /* 整体克隆合成进度条（缓动假进度：无真实进度可拉，前快后慢逼近 92%，完成置 100） */
 .synth-progress { display: flex; align-items: center; gap: var(--space-3); }
@@ -724,43 +627,4 @@ onMounted(loadCatalog)
   transition: all var(--duration-fast);
 }
 .action-btn:hover { color: var(--foreground); border-color: var(--primary); background: var(--surface-container-high); }
-
-/* 逐行文案表 */
-.rows { display: flex; flex-direction: column; gap: var(--space-2); }
-.rows__head { display: flex; align-items: center; justify-content: space-between; }
-.rows__title { font-size: var(--font-size-lead); font-weight: var(--font-weight-semibold); color: var(--foreground); }
-.rows__ops { display: flex; align-items: center; gap: var(--space-2); }
-.row {
-  display: flex; align-items: center; gap: var(--space-2);
-  padding: var(--space-2) var(--space-3); border: 1px solid var(--border-subtle);
-  border-left: 3px solid transparent; border-radius: var(--radius-md);
-  background: var(--surface-container);
-}
-.row.is-running { border-left-color: var(--info); }
-.row.is-done { border-left-color: var(--success); }
-.row.is-failed { border-left-color: var(--error); }
-.row__idx { width: 22px; text-align: center; font-size: var(--font-size-caption); color: var(--muted-foreground); flex-shrink: 0; }
-.row__text {
-  flex: 1; min-width: 0; height: var(--size-input-height); padding: 0 var(--space-3);
-  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
-  color: var(--foreground); font-size: var(--font-size-body); outline: none;
-  transition: border-color var(--duration-fast), box-shadow var(--duration-fast);
-}
-.row__text:focus { border-color: var(--primary); box-shadow: 0 0 0 2px var(--ring); }
-.row__text:disabled { opacity: 0.5; }
-.row__audio { width: 180px; height: 30px; flex-shrink: 0; }
-.row__status { font-size: var(--font-size-caption); color: var(--muted-foreground); flex-shrink: 0; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.row__status.is-running { color: var(--info); }
-.row__status.is-done { color: var(--success); }
-.row__status.is-failed { color: var(--error); }
-.row__actions { display: flex; align-items: center; gap: var(--space-1); flex-shrink: 0; }
-
-.icon-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 26px; height: 26px; border-radius: var(--radius-sm);
-  color: var(--muted-foreground); background: transparent;
-  transition: color var(--duration-fast), background var(--duration-fast);
-}
-.icon-btn:hover:not(:disabled) { color: var(--foreground); background: var(--surface-container-high); }
-.icon-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 </style>

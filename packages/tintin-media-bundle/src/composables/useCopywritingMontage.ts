@@ -63,12 +63,10 @@ import {
   inputNameFromFinalPath,
   // 字幕重切段后处理（2026-09-18 用户裁决：声音克隆完成后即处理）
 } from './copywritingMontageLogic'
-// 原客户端 SentenceSplitterLLMWorker 机器（LLM 拆句 + 漏字校验回退本地）
-import {
-  SENTENCE_SPLIT_SYSTEM_PROMPT,
-  extractLlmLines,
-  extractLlmContent,
-} from './voiceCloneLogic'
+// 原客户端 SentenceSplitterLLMWorker 拆句机器已整体退役（2026-09-29 报障：
+// 品牌词 Blue VO!CE 被半角 ! 跨任务切碎；TTS 文本一律整段直发不拆句），
+// 本文件仅剩 extractLlmContent 活消费
+import { extractLlmContent } from './voiceCloneLogic'
 import { readCacheDir } from './useSettingsConfig'
 import { joinDefaultPath } from './settingsIntegrationLogic'
 // 模块级工具/轮询常量与 Step1/Step2 编排已迁 montage/（铁律 10 拆分，纯搬迁，
