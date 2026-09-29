@@ -676,10 +676,12 @@ const fancyCustomPreviewStyle = computed<Record<string, string>>(() => {
         <!-- 音效包装（2026-09-23 用户裁决：智能匹配音效上线——服务端 /sfx/library
              306 条全带中文名+语义标签，逐镜按「音效建议」打分匹配并下载绑定；
              AI音效包装（/audio/gen/sfx 生成）维持 2026-09-22 停用裁决。
-             单镜重生成按钮仅在已有产物的镜头出现，保持可用） -->
+             2026-09-29 用户裁决：音效包装功能整体暂时禁用——智能匹配音效与
+             AI 音效包装两按钮一并 disabled。matchSfxFromLibrary 全库仅此一处
+             调用、无自动触发路径，禁按钮即禁功能；恢复时移除两处 :disabled） -->
         <div class="row">
           <TButton label="智能匹配音效" :loading="sfxMatchBusy" :icon="sfxMatchDone ? 'check' : ''"
-            title="从服务端音效库为每个带「音效建议」的镜头匹配语义最佳音效并绑定（可重按覆盖）"
+            :disabled="true" title="该功能暂时停用"
             @click="matchSfxFromLibrary" />
           <TButton label="AI音效包装" :loading="sfxBusy" :icon="sfxAllDone ? 'check' : ''"
             :disabled="true" title="该功能暂时停用"

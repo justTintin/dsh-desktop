@@ -347,6 +347,8 @@ export function useCopywritingMontage() {
     statusText, serverUrl, ensureServerUrl, assemblePlans, previewUrl,
     finalBusy, finalProgress, finalDone, finalVideoList, finalVideoPath,
     step4Candidates, sharedProductInfo,
+    // 素材池（2026-09-29 跨机绑定恢复：按 serverPath 入池/去重，deep watch 自动持久化）
+    scenes,
     // 2026-09-21 用户裁决：第一步文案带入口播配音页（扫描建行无 .txt 时回退）
     getScriptCopy: () => manualCopy.value,
     // 选择脚本应用时回填旁白（第一步文案 = 镜头旁白拼接，与分镜脚本页「继续创作」同口径）

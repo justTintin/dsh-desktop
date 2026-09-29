@@ -35,6 +35,12 @@ import {
   type StoryboardShot,
 } from '../opsStoryboardLogic'
 import { useCopywritingMontageTextFx } from './useCopywritingMontageTextFx'
+import type { SplitSceneRow } from '../copywritingMontageStep1SplitLogic'
+import {
+  encodeClipGroups,
+  clipGroupsFromScriptShots,
+  type ClipBindingSeg,
+} from '../copywritingMontageClipBindingLogic'
 
 export interface CopywritingMontageStep3Context {
   statusText: Ref<string>
@@ -56,12 +62,16 @@ export interface CopywritingMontageStep3Context {
   getScriptCopy: () => string
   /** 选择脚本应用时回填旁白（与 getScriptCopy 同一数据源） */
   setScriptCopy: (text: string) => void
+  /** 素材池（Step1Split 持有并持久化；2026-09-29 跨机绑定恢复按 serverPath 入池/去重，
+   *  推入即被 Step1 的 deep watch 持久化到 localStorage） */
+  scenes: Ref<SplitSceneRow[]>
 }
 
 export function useCopywritingMontageStep3Voice(ctx: CopywritingMontageStep3Context) {
   const { statusText, serverUrl, ensureServerUrl, assemblePlans, previewUrl,
     finalBusy, finalProgress, finalDone, finalVideoList, finalVideoPath,
-    step4Candidates, collectCandidates, ensureProcessedSrt, sharedProductInfo, getScriptCopy, setScriptCopy } = ctx
+    step4Candidates, collectCandidates, ensureProcessedSrt, sharedProductInfo, getScriptCopy, setScriptCopy,
+    scenes } = ctx
 
   // ── Step3 口播配音（对照 step3_voice_view.py 逐控件 + VoiceCloneWorker api 模式 +
   // VideoDubbingWorker；TTS 直连用户可改 apiUrl，初值跟随 server_url + /indextts/tts；
@@ -853,6 +863,67 @@ function clearVoiceProgressListener(): void {
    *  当前轮结束后补跑一轮（智能匹配→生成剪辑方案接连触发时，最新绑定状态保证落库） */
   const scriptSyncing = ref(false)
   let scriptSyncQueued = false
+  // ── 绑定随脚本跨机同步（2026-09-29 A′：clip_groups 附加字段——服务端存储原样
+  //    透传已实测；历史实现只写单素材弱引用，换机/重新应用脚本后绑定全空）──
+  /** 保存载荷附加每镜绑定组：clipGroups 下标 → 素材池 serverPath 实体标识数组 */
+  function attachClipGroups(payload: Record<string, unknown>, tab: StoryboardTab): void {
+    const shots = payload.shots as Array<Record<string, unknown>> | undefined
+    if (!Array.isArray(shots)) return
+    const groups = encodeClipGroups(tab.clipGroups, scenes.value)
+    shots.forEach((s, i) => { if (groups[i]?.length) s.clip_groups = groups[i] })
+  }
+
+  /** 应用脚本后异步恢复绑定：按 ref（'material://<id>' 或服务端分割片路径）入池——
+   *  同 serverPath 行复用下标不重复入池；新行 downloadState=pending 懒下载；
+   *  推入即被 Step1 的 deep watch 持久化。分镜绑定失效场景不变（重新智能匹配可重建）。 */
+  async function restoreTabClipGroups(tab: StoryboardTab, groups: ClipBindingSeg[][]): Promise<void> {
+    if (!groups.length) return
+    await ensureServerUrl()
+    const base = serverUrl.value.replace(/\/$/, '')
+    let nextIdx = scenes.value.reduce((m, s) => Math.max(m, s.idx), 0)
+    const byServerPath = new Map(scenes.value.map((s) => [s.serverPath, s.idx]))
+    let restored = 0
+    groups.forEach((segs, i) => {
+      if (!segs || !segs.length) return
+      const idxs: number[] = []
+      for (const seg of segs) {
+        const ref = String(seg.ref || '').trim()
+        if (!ref) continue
+        let idx = byServerPath.get(ref)
+        if (idx === undefined) {
+          nextIdx++
+          const isMat = ref.startsWith('material://')
+          const mid = isMat ? ref.slice('material://'.length) : ''
+          const name = isMat ? `素材库 ${mid}` : (ref.split('/').pop() || ref)
+          scenes.value.push({
+            idx: nextIdx,
+            name,
+            sourceName: name,
+            startSec: 0,
+            endSec: seg.duration,
+            duration: seg.duration,
+            description: '',
+            analysis: '',
+            clipUrl: isMat
+              ? `/material/serve?material_id=${encodeURIComponent(mid)}`
+              : base + (ref.startsWith('/') ? ref : '/' + ref),
+            serverPath: ref,
+            downloadState: 'pending',
+            checked: false,
+            ...(seg.mediaType === 'image' ? { mediaType: 'image' as const } : {}),
+          })
+          byServerPath.set(ref, nextIdx)
+          idx = nextIdx
+        }
+        idxs.push(idx)
+      }
+      if (idxs.length) { tab.clipGroups[i] = idxs; restored += idxs.length }
+    })
+    if (restored) {
+      notify('素材绑定已恢复', `脚本携带的绑定组已按服务端标识入池重建（${restored} 段）；若片段已不在服务端，重新智能匹配即可重建。`)
+    }
+  }
+
   async function syncStoryboardsToServer(): Promise<void> {
     if (!storyboards.value.length) return
     if (scriptSyncing.value) { scriptSyncQueued = true; return }
@@ -870,6 +941,7 @@ function clearVoiceProgressListener(): void {
             shots: tab.shots,
             product: { brand: info.brand || '', model: info.model || '', category: info.product || '', name: '' },
           })
+          attachClipGroups(payload, tab)
           // 与 saveStoryboard 同接口同忙场景（分割/合成排队时实测 68s 才返回）：2026-09-21
           // 用户裁决同步一并放宽 120s（30s 默认超时被掐即弹「分镜同步失败」）
           const res = await window.tintin.server.post('/api/storyboard/scripts', payload, undefined, 120000)
@@ -980,6 +1052,7 @@ function clearVoiceProgressListener(): void {
         shots: copyShots.value,
         product: { brand: info.brand || '', model: info.model || '', category: info.product || '', name: '' },
       })
+      attachClipGroups(payload, tab)
       // 2026-09-21 用户报障「保存失败 Request timeout」：保存 POST 走通用通道默认 30s 超时，
       //   服务端正忙（如跑语音合成排队）时会被掐——保存放宽到 120s（仅本调用，通道向后兼容）
       const res = await window.tintin.server.post('/api/storyboard/scripts', payload, undefined, 120000)
@@ -1035,7 +1108,7 @@ function clearVoiceProgressListener(): void {
   const pickDetail = ref<{
     loading: boolean
     error: string
-    detail: { topic: string; ratio: string; product: { brand: string; model: string; category: string; name: string }; shots: StoryboardShot[] } | null
+    detail: { topic: string; ratio: string; product: { brand: string; model: string; category: string; name: string }; shots: StoryboardShot[]; clipGroups: ClipBindingSeg[][] } | null
   }>({ loading: false, detail: null, error: '' })
   async function selectScriptOption(id: string): Promise<void> {
     if (!id) return
@@ -1059,6 +1132,8 @@ function clearVoiceProgressListener(): void {
             name: String(script.product.name || ''),
           },
           shots: script.shots.map((s, i) => normalizeShot(s, i + 1)),
+          // 2026-09-29 跨机绑定恢复：从原始 shots 提取 clip_groups（normalizeShot 白名单不带它）
+          clipGroups: clipGroupsFromScriptShots((data as { shots?: unknown }).shots),
         },
         error: '',
       }
@@ -1086,6 +1161,9 @@ function clearVoiceProgressListener(): void {
       notify('分镜数量已达上限', `最多支持 ${COPY_STORYBOARD_MAX} 个分镜脚本，请先删除部分分镜。`)
       return
     }
+    // 2026-09-29 跨机绑定恢复：脚本带 clip_groups → 按服务端标识入池重建 clipGroups
+    // （异步不阻塞 tab 创建；素材已不在服务端时该段预合成会点名，重新智能匹配可重建）
+    void restoreTabClipGroups(tab, detail.clipGroups)
     scriptPickDlg.value.show = false
     statusText.value = `完成： 已应用脚本「${detail.topic || id}」（${detail.shots.length} 镜）`
     notify('已应用脚本', `分镜与旁白已回填（${detail.shots.length} 镜），可在分镜卡上继续调整。`)
