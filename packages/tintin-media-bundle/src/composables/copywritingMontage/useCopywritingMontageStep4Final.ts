@@ -729,7 +729,9 @@ async function exportAllToJianyingDraft(): Promise<void> {
 
   /** 草稿命名：日期(分钟)+品牌产品型号+分辨率+音频索引
    *  （2026-09-30 用户裁决：日期在前精确到分钟、去「轨道时间轴」后缀；原 09-16 为
-   *  品牌在前+秒级+固定后缀。产品回退链=全局产品 → 激活分镜 productBrief → 「混剪」） */
+   *  品牌在前+秒级+固定后缀。产品回退链=全局产品 → 激活分镜 productBrief → 「混剪」。
+   *  分辨率回退链=splitResolution（仅本地分割流程赋值）→ 方案片段自带的 resolution
+   *  （素材库条目入池即有宽高）→ 「未知分辨率」——素材库直加不经本地分割，前者恒空） */
   function timelineDraftName(): string {
     const brand = String(sharedProductInfo.value.brand || '').trim()
     const product = String(sharedProductInfo.value.product || '').trim()
@@ -745,8 +747,13 @@ async function exportAllToJianyingDraft(): Promise<void> {
     const d = new Date()
     const ymd = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0')
     const hm = String(d.getHours()).padStart(2, '0') + String(d.getMinutes()).padStart(2, '0')
-    // 分辨率（splitResolution 格式 "1080x1920"，无则兜底「未知分辨率」）
-    const resolution = splitResolution.value || '未知分辨率'
+    // 分辨率：本地分割基线 → 方案内片段自带宽高（素材库直加路径的唯一来源）
+    const sceneRes = assemblePlans.value
+      .flatMap((p) => (p.confirmed ? p.groups || [] : []))
+      .flatMap((g) => g.scenes || [])
+      .map((s) => String((s as { resolution?: string }).resolution || '').trim())
+      .find(Boolean) || ''
+    const resolution = splitResolution.value || sceneRes || '未知分辨率'
     // 音频索引
     const idxs = voiceRows.value
       .map((r) => {
