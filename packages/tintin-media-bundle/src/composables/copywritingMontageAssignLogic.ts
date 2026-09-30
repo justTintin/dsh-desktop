@@ -7,9 +7,9 @@
 // 时长窗+评分序）→ buildAssignMatchPrompt 单脚本一次 llm:chat → parseAssignMatchResponse
 // 校验解析 → mergeTabAssignment 命中写回+缺口循环兜底 → planShotGroup 装填写 tab.clipGroups。
 // ═══════════════════════════════════════════════════════════════
-import { SHOT_TYPE_LABELS } from './copywritingMontageStep1SplitLogic.ts'
-import type { StoryboardShot } from './opsStoryboardLogic.ts'
-import type { AssignPoolItem } from './copywritingMontageStep2ConcatLogic.ts'
+import { SHOT_TYPE_LABELS } from './copywritingMontageStep1SplitLogic'
+import type { StoryboardShot } from './opsStoryboardLogic'
+import type { AssignPoolItem } from './copywritingMontageStep2ConcatLogic'
 
 /** 单脚本进 prompt 的候选素材总量帽（控制 token；超出按逐镜轮转保序截断） */
 export const ASSIGN_MATCH_CANDIDATE_CAP = 40
@@ -37,7 +37,7 @@ export function shotTypeMatches(sceneType: string | undefined, shotType: string 
  *  截前 topK；池空返回空 */
 export function prefilterShotCandidates(
   shot: StoryboardShot,
-  pool: AssignPoolItem[],
+  pool: ReadonlyArray<AssignPoolItem>,
   topK = ASSIGN_MATCH_PER_SHOT_TOPK,
 ): AssignPoolItem[] {
   if (!pool.length) return []
@@ -181,8 +181,11 @@ export function mergeTabAssignment(
       idxs.push(cand.scene.idx)
       matched++
     } else if (pool.length) {
-      idxs.push(pool[k % pool.length].scene.idx)
-      k++
+      const cyc = pool[k % pool.length]
+      if (cyc) {
+        idxs.push(cyc.scene.idx)
+        k++
+      }
     } else {
       idxs.push(-1)
     }
@@ -240,4 +243,92 @@ export function planShotGroup(
     if (covered >= target * sealRatio - 1e-6) sealed = true
   }
   return { idxs, useDurs, coveredSec: Math.round(covered * 100) / 100, sealed }
+}
+
+/** 镜标按旁白时长等比放大的系数（2026-09-24 用户裁决口径；clamp 0.2~4）。
+ *  旁白缺失（=0）或镜标 Σ=0 时系数 1（维持原值）。 */
+export function voiceScaleOf(voiceDurSec: number, shotsSumSec: number): number {
+  const vd = Number(voiceDurSec) || 0
+  const sum = Number(shotsSumSec) || 0
+  return vd > 0 && sum > 0 ? Math.max(0.2, Math.min(4, vd / sum)) : 1
+}
+
+/** 2026-09-30 用户裁决 B：生成剪辑方案前的欠装补片——「先智能匹配、后克隆声音」
+ *  时序下，匹配按原镜标封箱的绑定组（如 4s 镜绑 1 段 4s），在旁白把镜标等比放大后
+ *  全长不足新目标（单片段组最长只能用全长，groupUseDurs 只裁不补）。此处按同镜
+ *  预筛排名从池内追加片段：组内去重同 planShotGroup、跨镜复用同匹配口径，追加到
+ *  覆盖目标或池耗尽（末端裁剪由方案生成的 groupUseDurs 落地）。
+ *  返回 { groups: 追加后的组, appendedTotal, appendedByShot }（无欠装时原样返回）。 */
+export function topUpClipGroups(
+  shots: ReadonlyArray<Pick<StoryboardShot, 'duration'> & Partial<Pick<StoryboardShot, 'shot_type'>>>,
+  groups: ReadonlyArray<ReadonlyArray<number>>,
+  pool: ReadonlyArray<AssignPoolItem>,
+  voiceDurSec: number,
+): { groups: number[][]; appendedTotal: number; appendedByShot: number[] } {
+  const scale = voiceScaleOf(voiceDurSec, shots.reduce((a, s) => a + (Number(s?.duration) || 0), 0))
+  const byIdx = new Map(pool.map((c) => [c.scene.idx, c]))
+  const out: number[][] = []
+  const appendedByShot: number[] = []
+  let appendedTotal = 0
+  groups.forEach((g, i) => {
+    const idxs = [...(g || [])]
+    const inGroup = new Set<number>()
+    let fullSum = 0
+    for (const idx of idxs) {
+      if (inGroup.has(idx)) continue
+      inGroup.add(idx)
+      fullSum += Math.max(0, Number(byIdx.get(idx)?.scene.duration) || 0)
+    }
+    const shot = shots[i]
+    const target = (Number(shot?.duration) || 0) * scale
+    let appended = 0
+    if (target > 0 && fullSum < target - 0.05) {
+      // 预筛以放大后目标计（与 planShotGroup 的 shim 同口径），景别/时长窗排名一致
+      const shim = { ...shot, duration: target } as StoryboardShot
+      const ranked = prefilterShotCandidates(shim, pool).filter((c) => !inGroup.has(c.scene.idx))
+      for (const cand of ranked) {
+        if (fullSum >= target - 0.05) break
+        const full = Math.max(0, Number(cand.scene.duration) || 0)
+        if (full <= 0) continue
+        idxs.push(cand.scene.idx)
+        inGroup.add(cand.scene.idx)
+        fullSum += full
+        appended++
+      }
+    }
+    appendedByShot.push(appended)
+    appendedTotal += appended
+    out.push(idxs)
+  })
+  return { groups: out, appendedTotal, appendedByShot }
+}
+
+/** 2026-09-30 用户裁决 A：克隆声音后的欠装检测（提示用）——镜标按旁白放大后仍有
+ *  绑定组全长不足目标的镜数与总差值（秒）。供克隆完成提示"将自动补片/可重新匹配"。 */
+export function underfillAfterVoice(
+  shots: ReadonlyArray<Pick<StoryboardShot, 'duration'>>,
+  groups: ReadonlyArray<ReadonlyArray<number>>,
+  pool: ReadonlyArray<AssignPoolItem>,
+  voiceDurSec: number,
+): { shotsShort: number; deficitSec: number } {
+  const scale = voiceScaleOf(voiceDurSec, shots.reduce((a, s) => a + (Number(s?.duration) || 0), 0))
+  const byIdx = new Map(pool.map((c) => [c.scene.idx, c]))
+  let shotsShort = 0
+  let deficitSec = 0
+  groups.forEach((g, i) => {
+    const target = (Number(shots[i]?.duration) || 0) * scale
+    if (target <= 0) return
+    const inGroup = new Set<number>()
+    let fullSum = 0
+    for (const idx of g || []) {
+      if (inGroup.has(idx)) continue
+      inGroup.add(idx)
+      fullSum += Math.max(0, Number(byIdx.get(idx)?.scene.duration) || 0)
+    }
+    if (fullSum < target - 0.05) {
+      shotsShort++
+      deficitSec += target - fullSum
+    }
+  })
+  return { shotsShort, deficitSec: Math.round(deficitSec * 100) / 100 }
 }

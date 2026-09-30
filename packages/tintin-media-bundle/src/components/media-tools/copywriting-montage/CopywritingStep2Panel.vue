@@ -14,7 +14,7 @@ import VdStepBar from '../VdStepBar.vue'
 import { markdownListLines, stripProductCodeFromModel, parseProductKeywords } from '@/composables/opsProductLibraryLogic'
 import { parseScriptDetail } from '@/composables/opsStoryboardLogic'
 import { copyPreviewText, SHOT_TYPE_COLORS, SHOT_TYPE_LABELS, buildAssignPool } from '@/composables/copywritingMontageLogic'
-import { buildAssignCandidateSet, buildAssignMatchPrompt, parseAssignMatchResponse, mergeTabAssignment, planShotGroup } from '@/composables/copywritingMontageAssignLogic'
+import { buildAssignCandidateSet, buildAssignMatchPrompt, parseAssignMatchResponse, mergeTabAssignment, planShotGroup, topUpClipGroups } from '@/composables/copywritingMontageAssignLogic'
 import { fetchMaterialGrid, fetchMaterialDistinct, type PickerItem } from '@/composables/useWorkbenchPickers'
 import { buildMediaServeUrl, buildMediaThumbUrl } from '@/composables/workbenchChatContext'
 import { errText, notify } from '@/composables/copywritingMontage/context'
@@ -531,6 +531,27 @@ async function onConfirmCompose(): Promise<void> {
   if (splitBusy.value) {
     notify('镜头分割进行中', '素材池尚未完整，请等分割完成后再生成剪辑方案。')
     return
+  }
+  // 2026-09-30 用户裁决 B：生成剪辑方案前欠装补片——「先智能匹配、后克隆声音」时序下
+  // 镜标按旁白等比放大后，旧绑定组全长不足新目标（如 4s 镜绑 1 段 4s、放大后欠
+  // 1s+）。按同镜预筛排名从池内追加并回写 tab.clipGroups（UI 分镜卡/持久化同步
+  // 一致）；池耗尽时保持欠装（欠装明示口径不变）。
+  {
+    const topPool = buildAssignPool(filteredScenes.value)
+    let toppedSegs = 0
+    let toppedShots = 0
+    for (const tab of storyboards.value) {
+      if (!tab.shots.length || tab.clipGroups.length !== tab.shots.length) continue
+      const r = topUpClipGroups(tab.shots, tab.clipGroups, topPool, Number(tab.voiceDurSec) || 0)
+      if (r.appendedTotal) {
+        tab.clipGroups = r.groups
+        toppedSegs += r.appendedTotal
+        toppedShots += r.appendedByShot.filter((n) => n > 0).length
+      }
+    }
+    if (toppedSegs) {
+      notify('装填已自动补齐', `镜标已按旁白时长放大：为 ${toppedShots} 个镜头自动补绑 ${toppedSegs} 段素材（方案将填满整条旁白）。`)
+    }
   }
   const tabs = storyboards.value.map((s) => ({ id: s.id, name: s.name, narrative: s.narrative, voiceDurSec: s.voiceDurSec, shots: s.shots, clipGroups: s.clipGroups.map((g) => g.slice()) }))
   const ok = await runConcatFromAllStoryboards(tabs)

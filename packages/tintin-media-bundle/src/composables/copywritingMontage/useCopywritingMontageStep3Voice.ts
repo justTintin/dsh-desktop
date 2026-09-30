@@ -41,6 +41,8 @@ import {
   clipGroupsFromScriptShots,
   type ClipBindingSeg,
 } from '../copywritingMontageClipBindingLogic'
+import { buildAssignPool } from '../copywritingMontageStep2ConcatLogic'
+import { underfillAfterVoice } from '../copywritingMontageAssignLogic'
 
 export interface CopywritingMontageStep3Context {
   statusText: Ref<string>
@@ -1238,6 +1240,24 @@ function clearVoiceProgressListener(): void {
       if (ok) {
         statusText.value = `完成： ${ok}/${tabs.length} 个分镜声音已生成`
         notify('批量克隆完成', ok === tabs.length ? `${ok} 个分镜声音全部生成。` : `${ok}/${tabs.length} 个成功：${fails.join('；')}`)
+        // 2026-09-30 用户裁决 A：克隆后欠装检测提示——镜标将按旁白时长等比放大，
+        // 「先匹配后克隆」的旧绑定组可能全长不足新目标。提示用户方案生成时会自动
+        // 补片（裁决 B）；需要语义最优分配时可重新智能匹配。
+        try {
+          const pool = buildAssignPool(scenes.value)
+          const cloned = storyboards.value.filter((t) => t.voiceWav && tasks.some((tk) => tk.tabId === t.id))
+          let shortShots = 0
+          let deficit = 0
+          for (const t of cloned) {
+            if (!t.clipGroups.length || t.clipGroups.length !== t.shots.length) continue
+            const u = underfillAfterVoice(t.shots, t.clipGroups, pool, Number(t.voiceDurSec) || 0)
+            shortShots += u.shotsShort
+            deficit += u.deficitSec
+          }
+          if (shortShots > 0) {
+            notify('镜标已按旁白放大', `旁白时长长于镜标设计：${shortShots} 个镜头的已绑定素材将不够填满（合计约差 ${deficit.toFixed(1)} 秒）。\n生成剪辑方案时会自动从素材池补片填满；如需按画面语义重新分配，可重新「智能匹配到分镜脚本」。`)
+          }
+        } catch { /* 检测失败不影响克隆完成提示 */ }
         // 2026-09-22 用户裁决：声音克隆完成后自动触发服务端同步——让脚本库及时
         // 感知声音状态（120s 超时、best-effort 不阻断）
         void syncStoryboardsToServer()
