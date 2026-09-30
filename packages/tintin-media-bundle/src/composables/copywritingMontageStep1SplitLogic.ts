@@ -124,6 +124,10 @@ export interface SplitSceneRow {
   product?: string   // 产品列（服务端逐镜分析，空则 UI 显 —）
   model?: string     // 型号列（同上）
   resolution?: string // 画幅列（服务端返回，空则 UI 用 ffprobe 探测源片结果兜底）
+  /** 服务端使用次数（2026-09-30 用户裁决：选择池条目展示热度——素材库条目入池时自
+   *  /material/list 携带，口径同工作台选素材弹窗：原素材=usage_count_total（源聚合），
+   *  回落 usage_count（自身）；本地分割产物无此字段=不显示 */
+  usageCount?: number
 }
 
 /** shots → 镜头表格行（checked 默认 true，行号从 1 起；sourcePath 用于「位置」兜底推断——
