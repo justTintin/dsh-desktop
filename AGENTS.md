@@ -104,7 +104,7 @@ git diff --check
 - 行为修复应有能捕获该缺陷的回归，优先验证输入、输出、状态转换和失败路径。字符串/源码契约测试只作为补充，不能替代行为验证。
 - 当前 `typecheck` 只覆盖配置及 `src/main`、`src/preload`、`src/shared`、TS 测试；插件 JS、脚本和 HTML 不在其覆盖范围。当前没有 `npm run lint` 或 `npm run format:check`，不得报告它们通过。
 - 涉及启动、IPC、UI、安装迁移、更新或打包，补充对应真实流程验收。Windows 路径/进程/安装行为必须有 Windows 验证；其他平台通过不能代替。
-- 发版遵循 release runbook 和目标原生构建脚本，不绕过 `verify-target`。PR 检查通过或本地打包成功不等于正式发布。一键打包用 `D:\Project\TinTin-DSH-Release-Builder`（run.bat 或 `node build.js`，全流程=前置检查→媒体二进制/preset 自动补齐→vitest 基线门禁→typecheck→tintin:media→package:win→产物校验→归档 releases/；其原客户端版本备份为 build.js.old-client.bak）。
+- 发版遵循 release runbook 和目标原生构建脚本，不绕过 `verify-target`。PR 检查通过或本地打包成功不等于正式发布。一键打包用 `D:\Project\DSH-Release-Builder`（run.bat 或 `node build.js`，全流程=前置检查→媒体二进制/preset 自动补齐→vitest 基线门禁→typecheck→tintin:media→package:win→产物校验→归档 releases/）。
 - 交付写清改动、原因、实际运行的检查、未完成的验收与限制。不得把尚未执行的检查写成通过。
 
 ## 5. TinTin 移植约束
