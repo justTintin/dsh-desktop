@@ -37,7 +37,7 @@ function makeFakeWav(name: string): string {
 function exportAndRead(options: {
   durationsSec: number[]
   sfxClips?: Array<Array<{ path: string; startUs: number; durUs: number }>>
-  tplClips?: Array<Array<{ phrase: string; startUs: number; durUs: number }>>
+  tplClips?: Array<Array<{ phrase: string; startUs: number; durUs: number; resourceId: string }>>
   transitions?: string[]
 }): Record<string, any> {
   const videos = options.durationsSec.map((_, i) => makeFakeVideo(`v${i}.mp4`))
