@@ -209,14 +209,17 @@ export interface ShotFillPlan {
 /** 按镜标时长装填单镜（2026-09-22 用户裁决方案C开工）：主片（LLM 语义选定）置首，
  *  其后按预筛排名继续取片，累计达 镜标×封镜阈值(0.9) 即封镜；末端片段超出镜标时
  *  裁剪到剩余量（超长裁剪兜底）；主片自身超长 → 单片裁到镜标；镜标未知 → 主片全长单片。
- *  组内按片段 idx 去重（不复用同一段） */
+ *  组内按片段 idx 去重（不复用同一段）。
+ *  2026-09-30 用户裁决：补片按 usage 使用计数升序取用（同数保持预筛排名序）——
+ *  跨镜优先未用过的片段，消除「每镜补片都是同一段」的重复；池耗尽仍允许复用（欠装兜底） */
 export function planShotGroup(
   shot: StoryboardShot,
   primaryIdx: number,
   pool: AssignPoolItem[],
-  opts?: { sealRatio?: number },
+  opts?: { sealRatio?: number; usage?: ReadonlyMap<number, number> },
 ): ShotFillPlan {
   const sealRatio = opts?.sealRatio ?? ASSIGN_SEAL_RATIO
+  const usage = opts?.usage
   const target = Math.max(0, Number(shot.duration) || 0)
   const primary = pool.find((c) => c.scene.idx === primaryIdx) || null
   if (!primary) return { idxs: [], useDurs: [], coveredSec: 0, sealed: false }
@@ -225,12 +228,16 @@ export function planShotGroup(
     return { idxs: [primary.scene.idx], useDurs: [primaryFull], coveredSec: primaryFull, sealed: true }
   }
   const ranked = prefilterShotCandidates(shot, pool).filter((c) => c.scene.idx !== primary.scene.idx)
+  // 稳定排序：使用数相同的片段保持预筛排名序（主片语义优先，不在重排名之列）
+  const fillers = usage
+    ? [...ranked].sort((a, b) => (usage.get(a.scene.idx) ?? 0) - (usage.get(b.scene.idx) ?? 0))
+    : ranked
   const seen = new Set<number>([primary.scene.idx])
   const idxs: number[] = []
   const useDurs: number[] = []
   let covered = 0
   let sealed = false
-  for (const cand of [primary, ...ranked]) {
+  for (const cand of [primary, ...fillers]) {
     if (seen.has(cand.scene.idx) && idxs.length) continue
     const full = Math.max(0, Number(cand.scene.duration) || 0)
     if (full <= 0) continue
@@ -258,6 +265,8 @@ export function voiceScaleOf(voiceDurSec: number, shotsSumSec: number): number {
  *  全长不足新目标（单片段组最长只能用全长，groupUseDurs 只裁不补）。此处按同镜
  *  预筛排名从池内追加片段：组内去重同 planShotGroup、跨镜复用同匹配口径，追加到
  *  覆盖目标或池耗尽（末端裁剪由方案生成的 groupUseDurs 落地）。
+ *  2026-09-30 用户裁决（防重复）：追加按跨镜使用计数升序取用——计数初值=既有各组
+ *  成员（已在多镜出现的片段降级），追加中实时累加；消除「每镜补的都是同一段」。
  *  返回 { groups: 追加后的组, appendedTotal, appendedByShot }（无欠装时原样返回）。 */
 export function topUpClipGroups(
   shots: ReadonlyArray<Pick<StoryboardShot, 'duration'> & Partial<Pick<StoryboardShot, 'shot_type'>>>,
@@ -267,6 +276,9 @@ export function topUpClipGroups(
 ): { groups: number[][]; appendedTotal: number; appendedByShot: number[] } {
   const scale = voiceScaleOf(voiceDurSec, shots.reduce((a, s) => a + (Number(s?.duration) || 0), 0))
   const byIdx = new Map(pool.map((c) => [c.scene.idx, c]))
+  // 跨镜使用计数：初值=既有各组全部成员（出现即计 1，不叠次数——降级已用片段即可）
+  const usage = new Map<number, number>()
+  for (const g of groups) for (const idx of new Set(g || [])) usage.set(idx, (usage.get(idx) ?? 0) + 1)
   const out: number[][] = []
   const appendedByShot: number[] = []
   let appendedTotal = 0
@@ -283,15 +295,18 @@ export function topUpClipGroups(
     const target = (Number(shot?.duration) || 0) * scale
     let appended = 0
     if (target > 0 && fullSum < target - 0.05) {
-      // 预筛以放大后目标计（与 planShotGroup 的 shim 同口径），景别/时长窗排名一致
+      // 预筛以放大后目标计（与 planShotGroup 的 shim 同口径），景别/时长窗排名一致；
+      // 排名按使用计数升序稳定重排（同数保持预筛序）
       const shim = { ...shot, duration: target } as StoryboardShot
       const ranked = prefilterShotCandidates(shim, pool).filter((c) => !inGroup.has(c.scene.idx))
+        .sort((a, b) => (usage.get(a.scene.idx) ?? 0) - (usage.get(b.scene.idx) ?? 0))
       for (const cand of ranked) {
         if (fullSum >= target - 0.05) break
         const full = Math.max(0, Number(cand.scene.duration) || 0)
         if (full <= 0) continue
         idxs.push(cand.scene.idx)
         inGroup.add(cand.scene.idx)
+        usage.set(cand.scene.idx, (usage.get(cand.scene.idx) ?? 0) + 1)
         fullSum += full
         appended++
       }

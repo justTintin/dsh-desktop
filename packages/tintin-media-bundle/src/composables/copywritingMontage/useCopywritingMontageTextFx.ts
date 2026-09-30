@@ -303,6 +303,12 @@ export function useCopywritingMontageTextFx(ctx: CopywritingMontageTextFxContext
       hits = [...hits, ...matchKeywordHits([occ.text], [row], pool)]
     }
     hits.sort((a, b) => a.start - b.start)
+    // 2026-09-30 用户反馈（防冲突）：词级命中与手工标注两段 matchKeywordHits 调用
+    // 各自从池头轮转，合并后相邻命中可能同模板（如两次都取 pool[0]）——按最终命中
+    // 序整体重排 templateId；池≥2 时相邻命中必不同模板，池=1（指定样式/库仅一条）无解
+    if (pool.length > 1) {
+      hits.forEach((h, i) => { h.templateId = String(pool[i % pool.length]) })
+    }
     return { rows, hits, words }
   }
   async function resolveKeywordHits(text: string, timingPath: string, planKey = ''): Promise<KeywordHit[]> {

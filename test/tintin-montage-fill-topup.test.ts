@@ -2,7 +2,7 @@
 // 镜标按旁白等比放大，旧绑定组全长不足新目标——生成剪辑方案前自动补片 +
 // 克隆完成后欠装提示）。场景取自当日实测：9 段 4s 素材、镜标 [4,5,3]、旁白放大 1.265。
 import { describe, expect, it } from 'vitest'
-import { topUpClipGroups, underfillAfterVoice, voiceScaleOf } from '../packages/tintin-media-bundle/src/composables/copywritingMontageAssignLogic'
+import { planShotGroup, topUpClipGroups, underfillAfterVoice, voiceScaleOf } from '../packages/tintin-media-bundle/src/composables/copywritingMontageAssignLogic'
 import type { SplitSceneRow } from '../packages/tintin-media-bundle/src/composables/copywritingMontageStep1SplitLogic'
 import type { AssignPoolItem } from '../packages/tintin-media-bundle/src/composables/copywritingMontageStep2ConcatLogic'
 
@@ -51,5 +51,39 @@ describe('voiceScaleOf / underfillAfterVoice / topUpClipGroups', () => {
     const r3 = topUpClipGroups([{ duration: 4 }], [[9]], p1, 5.06 * 0 + 11.385)
     expect(r3.appendedTotal).toBe(0)
     expect(r3.groups).toEqual([[9]])
+  })
+})
+
+// ── 2026-09-30 用户裁决（防重复）：装填/补片按跨镜使用计数优先未用片段 ──
+describe('planShotGroup / topUpClipGroups 使用计数防重复', () => {
+  const p = pool(
+    row(1, 4), row(2, 4), row(3, 4), row(4, 4), row(5, 4),
+  )
+  const shot = { duration: 8 } as never
+
+  it('planShotGroup：补片按 usage 升序取用（同数保持预筛排名序）', () => {
+    const noUsage = planShotGroup(shot, 1, p)
+    expect(noUsage.idxs).toEqual([1, 2]) // 无计数：预筛排名 idx 升序
+    const withUsage = planShotGroup(shot, 1, p, { usage: new Map([[2, 1]]) })
+    expect(withUsage.idxs).toEqual([1, 3]) // 2 已被其它镜用过 → 取未用的 3
+    // 池内未用耗尽 → 允许复用已用片段（欠装兜底语义不变）
+    const m = new Map([[2, 1], [3, 1], [4, 1], [5, 1]])
+    const reused = planShotGroup(shot, 1, p, { usage: m })
+    expect(reused.idxs.length).toBe(2)
+    expect(reused.sealed).toBe(true)
+  })
+
+  it('topUpClipGroups：追加按既有跨镜成员计数降级已用片段', () => {
+    // 既有组：1/2 各出现 2 次、3 出现 1 次、4 未用；每镜 target 10s（8s 不足）各补 1 段
+    const shots = [{ duration: 10 }, { duration: 10 }, { duration: 10 }]
+    const r = topUpClipGroups(shots, [[1, 2], [1, 3], [1, 2]], pool(row(1, 4), row(2, 4), row(3, 4), row(4, 4)), 30)
+    expect(r.appendedByShot).toEqual([1, 1, 1])
+    // 追加不再撞已高频使用的 1/2：镜1/镜2 取未用的 4，镜3 取使用最少的 3
+    expect(r.groups[0]).toContain(4)
+    expect(r.groups[1]).toContain(4)
+    expect(r.groups[2]).toContain(3)
+    expect(r.groups[0]).not.toContain(3)
+    expect(r.groups[1]).not.toContain(2)
+    expect(r.groups[2]).not.toContain(4)
   })
 })

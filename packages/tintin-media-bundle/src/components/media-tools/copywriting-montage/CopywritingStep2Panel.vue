@@ -14,7 +14,7 @@ import VdStepBar from '../VdStepBar.vue'
 import { markdownListLines, stripProductCodeFromModel, parseProductKeywords } from '@/composables/opsProductLibraryLogic'
 import { parseScriptDetail } from '@/composables/opsStoryboardLogic'
 import { copyPreviewText, SHOT_TYPE_COLORS, SHOT_TYPE_LABELS, buildAssignPool } from '@/composables/copywritingMontageLogic'
-import { buildAssignCandidateSet, buildAssignMatchPrompt, parseAssignMatchResponse, mergeTabAssignment, planShotGroup, topUpClipGroups } from '@/composables/copywritingMontageAssignLogic'
+import { buildAssignCandidateSet, buildAssignMatchPrompt, parseAssignMatchResponse, mergeTabAssignment, planShotGroup, prefilterShotCandidates, topUpClipGroups } from '@/composables/copywritingMontageAssignLogic'
 import { fetchMaterialGrid, fetchMaterialDistinct, type PickerItem } from '@/composables/useWorkbenchPickers'
 import { buildMediaServeUrl, buildMediaThumbUrl } from '@/composables/workbenchChatContext'
 import { errText, notify } from '@/composables/copywritingMontage/context'
@@ -505,9 +505,20 @@ async function applyAssignment(matchIds?: string[]): Promise<void> {
         const sum = tab.shots.reduce((a, sh) => a + (Number(sh.duration) || 0), 0)
         return vd > 0 && sum > 0 ? Math.max(0.2, Math.min(4, vd / sum)) : 1
       })()
+      // 2026-09-30 用户裁决（防重复）：本脚本内跨镜使用计数——LLM 主片已被先前镜
+      // 使用时，从预筛排名取未用片段替换（池内无未用才保留原选）；补片排序同样
+      // 优先未用（planShotGroup usage 参数），消除「每镜补的都是同一段」
+      const runUsage = new Map<number, number>()
       tab.shots.forEach((shot, si) => {
         const shim = voiceScale !== 1 ? { ...shot, duration: Math.max(0.1, (Number(shot.duration) || 0) * voiceScale) } : shot
-        const fill = planShotGroup(shim, idxs[si] ?? -1, pool)
+        let primaryIdx = idxs[si] ?? -1
+        if (primaryIdx >= 0 && (runUsage.get(primaryIdx) ?? 0) > 0) {
+          const alt = prefilterShotCandidates(shot, pool)
+            .find((c) => c.scene.idx !== primaryIdx && (runUsage.get(c.scene.idx) ?? 0) === 0)
+          if (alt) primaryIdx = alt.scene.idx
+        }
+        const fill = planShotGroup(shim, primaryIdx, pool, { usage: runUsage })
+        fill.idxs.forEach((i2) => runUsage.set(i2, (runUsage.get(i2) ?? 0) + 1))
         groups.push(fill.idxs)
         coveredAll += fill.coveredSec
         targetAll += Math.max(0, (Number(shot.duration) || 0) * voiceScale)
