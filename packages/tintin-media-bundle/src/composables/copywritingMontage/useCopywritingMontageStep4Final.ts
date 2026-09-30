@@ -725,17 +725,18 @@ async function exportAllToJianyingDraft(): Promise<void> {
     try { return JSON.parse(JSON.stringify(o)) as T } catch (_) { return o }
   }
 
-  /** 草稿命名：品牌+产品型号+日期时间+分辨率+音频索引+轨道时间轴（2026-09-16 用户裁决） */
+  /** 草稿命名：日期(分钟)+品牌产品型号+分辨率+音频索引+轨道时间轴
+   *  （2026-09-30 用户裁决改序：日期在前精确到分钟；原 09-16 为品牌在前+秒级） */
   function timelineDraftName(): string {
     const brand = String(sharedProductInfo.value.brand || '').trim()
     const product = String(sharedProductInfo.value.product || '').trim()
     const model = String(sharedProductInfo.value.model || '').trim()
     // 品牌+产品型号（无则兜底「混剪」）
     const bp = (brand + product + model) || '混剪'
-    // 日期时间：YYYYMMDD_HHmmss
+    // 日期时间：YYYYMMDD_HHmm（分钟精度，2026-09-30 用户裁决：不需要秒）
     const d = new Date()
     const ymd = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0')
-    const hms = String(d.getHours()).padStart(2, '0') + String(d.getMinutes()).padStart(2, '0') + String(d.getSeconds()).padStart(2, '0')
+    const hm = String(d.getHours()).padStart(2, '0') + String(d.getMinutes()).padStart(2, '0')
     // 分辨率（splitResolution 格式 "1080x1920"，无则兜底「未知分辨率」）
     const resolution = splitResolution.value || '未知分辨率'
     // 音频索引
@@ -753,7 +754,7 @@ async function exportAllToJianyingDraft(): Promise<void> {
         ? '音频' + idxs[0] + '-' + idxs[idxs.length - 1]
         : '音频' + idxs.join(',')
     }
-    return bp + '_' + ymd + '_' + hms + '_' + resolution + (audioPart ? '_' + audioPart : '') + '_轨道时间轴'
+    return ymd + '_' + hm + '_' + bp + '_' + resolution + (audioPart ? '_' + audioPart : '') + '_轨道时间轴'
   }
 
   /** 口播行会话态恢复（2026-09-17 用户报障②③④）：voiceRows 仅在进 Step3/合成确认时
