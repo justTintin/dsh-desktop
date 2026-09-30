@@ -274,10 +274,19 @@ export function useCopywritingMontageStep4Final(ctx: MontageStep4Context) {
     try {
       const cands = await collectCandidates()
       step4Candidates.value = cands // 联动预览候选（不依赖 textFx 开关，进入即刷）
-      const n = cands.length
-      statusText.value = n > 0
-        ? `准备就绪：待混音合成 ${n} 个视频，点击「服务端合成」或「本地合成」`
-        : '暂无待合成视频，请先完成「口播配音」'
+      // 2026-09-30 用户反馈：原状态行按候选数提示「暂无待合成视频，请先完成口播配音」
+      // （原素材混剪 step4_final_view L388-395 逐字）——2026-09-22 虚拟时间轴架构下
+      // 预合成 mp4 不再产出，该候选链结构性为空，提示无条件恒显且误导（服务端合成
+      // 按钮同日裁决已禁用，真实出口=导出剪映草稿）。状态行改基于虚拟剪辑方案：
+      // 方案齐备=可导出（附声音克隆进度）；缺方案=指引去上一页生成方案。
+      const plans = assemblePlans.value.filter(
+        (p): p is typeof p & { groups: NonNullable<typeof p.groups>; tabId: string } =>
+          !!(p.confirmed && p.virtual && p.groups?.length && p.tabId),
+      )
+      const voiced = plans.filter((p) => getTabById(p.tabId)?.voiceWav).length
+      statusText.value = plans.length
+        ? `准备就绪：${plans.length} 个分镜方案（${voiced}/${plans.length} 已克隆声音），可点「导出到剪映时间轴」生成草稿`
+        : '暂无剪辑方案：请先在「视频素材」页完成智能匹配并点「生成剪辑方案」'
     } catch (_) { /* 原版 except pass */ }
     // 历史成片恢复（2026-09-10 用户报障：刷新/重启后 finalDone=false 三按钮全禁用，
     // 「一键导出到剪映」点击无反应——按候选视频推导 final 目录回扫已合成产物）
