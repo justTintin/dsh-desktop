@@ -315,9 +315,11 @@ export function classifyShotTypeDetail(filePath: string): { type: string; seg: s
   const dirs = parts.slice(0, -1).filter(Boolean).reverse()
   const segs = [nameNoExt, ...dirs]
   for (let si = 0; si < segs.length; si++) {
-    const low = segs[si].toLowerCase()
+    const seg = segs[si]
+    if (!seg) continue
+    const low = seg.toLowerCase()
     for (const [st, kws] of Object.entries(SHOT_TYPE_KEYWORDS)) {
-      if (kws.some((kw) => low.includes(kw))) return { type: st, seg: segs[si], origin: si === 0 ? 'file' : 'dir' }
+      if (kws.some((kw) => low.includes(kw))) return { type: st, seg, origin: si === 0 ? 'file' : 'dir' }
     }
   }
   return { type: '', seg: '', origin: 'file' }

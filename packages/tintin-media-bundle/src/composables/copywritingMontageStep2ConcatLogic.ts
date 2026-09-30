@@ -11,9 +11,9 @@
 // 本文件不做任何 IPC / DOM 操作（IRON-06/07 分层）
 // ═══════════════════════════════════════════════════════════════
 
-import type { SplitSceneRow } from './copywritingMontageStep1SplitLogic.ts'
-import { applyShotLayoutOrder } from './copywritingMontageStep1SplitLogic.ts'
-import type { StoryboardShot } from './opsStoryboardLogic.ts'
+import type { SplitSceneRow } from './copywritingMontageStep1SplitLogic'
+import { applyShotLayoutOrder } from './copywritingMontageStep1SplitLogic'
+import type { StoryboardShot } from './opsStoryboardLogic'
 
 // ── Step2 镜头重组（/montage/concat）──────────────────────────
 
@@ -199,10 +199,12 @@ export function buildBoundaryTransitions(
   let planBoundary = 0
   let rotation = Math.floor(rnd() * pool.length)
   for (let j = 1; j < segs.length; j++) {
-    if (!segs[j].shotFirst) { out.push('none'); continue }
-    const m = modeOf ? (modeOf(segs[j]) || mode) : mode
+    const seg = segs[j]
+    if (!seg || !seg.shotFirst) { out.push('none'); continue }
+    const m = modeOf ? (modeOf(seg) || mode) : mode
+    const randPick = pool[(rotation + planBoundary) % pool.length]
     if (m === 'random') {
-      out.push(pool[(rotation + planBoundary) % pool.length])
+      if (randPick !== undefined) out.push(randPick)
       planBoundary++
     } else {
       out.push(m)
@@ -307,7 +309,11 @@ export function buildPrecomposePlans(opts: {
   if (opts.randomness !== 'low') {
     for (let i = deck.length - 1; i > 0; i--) {
       const j = Math.floor(rnd() * (i + 1))
-      ;[deck[i], deck[j]] = [deck[j], deck[i]]
+      ;{
+        const a = deck[i]
+        const b = deck[j]
+        if (a !== undefined && b !== undefined) { deck[i] = b; deck[j] = a }
+      }
     }
   }
   const maxTotal = opts.durationLimitSec > 0 ? opts.durationLimitSec * 1.1 : 0
@@ -322,7 +328,11 @@ export function buildPrecomposePlans(opts: {
     if (opts.randomness === 'high') {
       for (let i = deck.length - 1; i > 0; i--) {
         const j = Math.floor(rnd() * (i + 1))
-        ;[deck[i], deck[j]] = [deck[j], deck[i]]
+        ;{
+          const a = deck[i]
+          const b = deck[j]
+          if (a !== undefined && b !== undefined) { deck[i] = b; deck[j] = a }
+        }
       }
     }
     // 均衡排序：按使用次数升序稳定排序（同频保持当前 deck 相对序），
@@ -338,6 +348,7 @@ export function buildPrecomposePlans(opts: {
       scanned++
       const clip = deck[ci % deck.length]
       ci++
+      if (!clip) continue
       const clipDur = maxTotal > 0 ? Math.max(0, Number(clip.duration) || 0) : 0
       // 时长预算：非首个片段且放不下 → 继续试更短的（不 break 整批）
       if (maxTotal > 0 && seq.length && totalDur + clipDur > maxTotal) continue
@@ -351,6 +362,7 @@ export function buildPrecomposePlans(opts: {
     if (maxTotal <= 0) {
       while (seq.length < target) {
         let pick = unique[0]
+        if (!pick) break
         let pickCnt = usageCount.get(pick.idx) || 0
         let pickRnd = rnd()
         for (const c of unique) {
@@ -363,7 +375,10 @@ export function buildPrecomposePlans(opts: {
       }
     }
     // 兑底：极端情况至少保证 1 个镜头
-    if (!seq.length) seq.push(unique[0])
+    if (!seq.length) {
+      const first = unique[0]
+      if (first) seq.push(first)
+    }
     // 位置编排：入场头/出场尾/其余居中（有任何标注才生效，对照原版）
     let ordered = seq
     if (seq.some((c) => positionOf(c))) {
@@ -496,7 +511,7 @@ export function buildScriptSystemPrompt(base: string, opts: {
 }): string {
   const parts = [String(base || '').trim()]
   const scene = SCRIPT_SCENE_OPTIONS.find((o) => o.value === opts.scene) || SCRIPT_SCENE_OPTIONS[0]
-  parts.push(`## 场景\n${scene.directive}`)
+  if (scene) parts.push(`## 场景\n${scene.directive}`)
   // 建议时长（2026-09-21 用户裁决：时长控制并入提示词；口播约 4 字/秒）
   const suggestRaw = Math.round(Number(opts.suggestSec) || 0)
   const suggest = suggestRaw >= 5 ? suggestRaw : 0 // 未传/过短 → 不出建议时长块
@@ -562,7 +577,8 @@ export function assignClipsCyclically(shotCounts: number[], pool: AssignPoolItem
   for (const n of shotCounts || []) {
     const row: number[] = []
     for (let s = 0; s < n; s++) {
-      row.push(pool.length ? pool[k % pool.length].scene.idx : -1)
+      const cyc = pool.length ? pool[k % pool.length] : undefined
+      row.push(cyc ? cyc.scene.idx : -1)
       k++
     }
     out.push(row)
@@ -604,6 +620,7 @@ export function assignScenesToShots(shots: StoryboardShot[], scenes: SplitSceneR
     let covered = 0
     while (cursor < ordered.length && (picked.length === 0 || (target > 0 && covered < target))) {
       const s = ordered[cursor++]
+      if (!s) break
       picked.push(s)
       covered += Number(s.duration) || 0
     }
