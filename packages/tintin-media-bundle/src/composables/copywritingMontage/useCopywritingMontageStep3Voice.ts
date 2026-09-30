@@ -21,6 +21,8 @@ import {
 } from '../copywritingMontageLogic'
 import { storyboardNameAfterSave } from '../copywritingMontageStep3VoiceLogic'
 import { notify, errText, joinPath } from './context'
+import { attachVoiceRef, voiceRefFromScriptDetail } from '../copywritingMontageVoiceRefLogic'
+import { uploadTabVoiceWav, restoreTabVoiceFromLibrary } from './useCopywritingMontageVoiceSync'
 import { readCacheDir } from '../useSettingsConfig'
 import {
   parseStoryboardShots,
@@ -663,6 +665,10 @@ function clearVoiceProgressListener(): void {
     /** 整体克隆产物（2026-09-21 用户裁决：每分镜脚本一条整段声音；二/三步批量处理） */
     voiceWav: string
     voiceDurSec: number
+    /** 克隆产物在服务端音频库的 id（2026-09-30 用户裁决 B：wav 上传
+     *  POST /audio/library/upload category=口播→归一「配音」池；''=未上传——脚本
+     *  同步不携带口播引用，换机应用脚本后无口播可恢复，重新批量克隆即可重建） */
+    voiceAudioId: string
     /** 每脚本视频设置（2026-09-23 用户裁决：输出画幅/转场动画/输出帧率按 tab 绑定——
      *  切 tab 即切设置，导出按各 tab 自身 transition 消费；时长限制=跟随本 tab 声音时长派生值） */
     layout: string
@@ -704,6 +710,7 @@ function clearVoiceProgressListener(): void {
       sourceNarrative: String(t.sourceNarrative || t.narrative || ''),
       voiceWav: String(t.voiceWav || ''),
       voiceDurSec: Number(t.voiceDurSec) || 0,
+      voiceAudioId: String(t.voiceAudioId || ''),
       // 每脚本视频设置（恢复失败/旧缓存缺字段回退全局默认）
       layout: String(t.layout || 'vertical'),
       transition: String(t.transition || 'random'),
@@ -775,6 +782,7 @@ function clearVoiceProgressListener(): void {
       sourceNarrative: init.narrative,
       voiceWav: '',
       voiceDurSec: 0,
+      voiceAudioId: '',
       layout: 'vertical',
       transition: 'random',
       fps: 'source',
@@ -950,6 +958,7 @@ function clearVoiceProgressListener(): void {
             product: { brand: info.brand || '', model: info.model || '', category: info.product || '', name: '' },
           })
           attachClipGroups(payload, tab)
+          attachVoiceRef(payload, tab)
           // 与 saveStoryboard 同接口同忙场景（分割/合成排队时实测 68s 才返回）：2026-09-21
           // 用户裁决同步一并放宽 120s（30s 默认超时被掐即弹「分镜同步失败」）
           const res = await window.tintin.server.post('/api/storyboard/scripts', payload, undefined, 120000)
@@ -1066,6 +1075,7 @@ function clearVoiceProgressListener(): void {
         product: { brand: info.brand || '', model: info.model || '', category: info.product || '', name: '' },
       })
       attachClipGroups(payload, tab)
+      attachVoiceRef(payload, tab)
       // 2026-09-21 用户报障「保存失败 Request timeout」：保存 POST 走通用通道默认 30s 超时，
       //   服务端正忙（如跑语音合成排队）时会被掐——保存放宽到 120s（仅本调用，通道向后兼容）
       const res = await window.tintin.server.post('/api/storyboard/scripts', payload, undefined, 120000)
@@ -1121,7 +1131,7 @@ function clearVoiceProgressListener(): void {
   const pickDetail = ref<{
     loading: boolean
     error: string
-    detail: { topic: string; ratio: string; product: { brand: string; model: string; category: string; name: string }; shots: StoryboardShot[]; clipGroups: ClipBindingSeg[][] } | null
+    detail: { topic: string; ratio: string; product: { brand: string; model: string; category: string; name: string }; shots: StoryboardShot[]; clipGroups: ClipBindingSeg[][]; voiceAudioId: string; voiceDurSec: number } | null
   }>({ loading: false, detail: null, error: '' })
   async function selectScriptOption(id: string): Promise<void> {
     if (!id) return
@@ -1147,6 +1157,9 @@ function clearVoiceProgressListener(): void {
           shots: script.shots.map((s, i) => normalizeShot(s, i + 1)),
           // 2026-09-29 跨机绑定恢复：从原始 shots 提取 clip_groups（normalizeShot 白名单不带它）
           clipGroups: clipGroupsFromScriptShots((data as { shots?: unknown }).shots),
+          // 2026-09-30 跨机口播恢复：根字段 voice_audio_id/voice_dur_sec（兼容 script 包裹）
+          voiceAudioId: voiceRefFromScriptDetail(data).audioId,
+          voiceDurSec: voiceRefFromScriptDetail(data).durSec,
         },
         error: '',
       }
@@ -1177,6 +1190,12 @@ function clearVoiceProgressListener(): void {
     // 2026-09-29 跨机绑定恢复：脚本带 clip_groups → 按服务端标识入池重建 clipGroups
     // （异步不阻塞 tab 创建；素材已不在服务端时该段预合成会点名，重新智能匹配可重建）
     void restoreTabClipGroups(tab, detail.clipGroups)
+    // 2026-09-30 跨机口播恢复：脚本带 voice_audio_id → 从音频库下载回填 tab.voiceWav
+    void restoreTabVoiceFromLibrary(tab, detail.voiceAudioId, detail.voiceDurSec, {
+      ensureServerUrl,
+      getServerUrl: () => serverUrl.value,
+      findTab: (id) => storyboards.value.find((t) => t.id === id),
+    })
     scriptPickDlg.value.show = false
     statusText.value = `完成： 已应用脚本「${detail.topic || id}」（${detail.shots.length} 镜）`
     notify('已应用脚本', `分镜与旁白已回填（${detail.shots.length} 镜），可在分镜卡上继续调整。`)
@@ -1240,6 +1259,14 @@ function clearVoiceProgressListener(): void {
       if (ok) {
         statusText.value = `完成： ${ok}/${tabs.length} 个分镜声音已生成`
         notify('批量克隆完成', ok === tabs.length ? `${ok} 个分镜声音全部生成。` : `${ok}/${tabs.length} 个成功：${fails.join('；')}`)
+        // 2026-09-30 用户裁决 B：克隆产物上传音频库（category=口播→归一「配音」池，
+        // 编排实现在 useCopywritingMontageVoiceSync.ts），id 记 tab.voiceAudioId 随下方
+        // 里程碑脚本同步跨机携带；单 tab 失败仅打点不阻断。必须先于
+        // syncStoryboardsToServer 完成才能同轮携带。
+        for (const tk of tasks) {
+          const tab = storyboards.value.find((s) => s.id === tk.tabId)
+          if (tab?.voiceWav) await uploadTabVoiceWav(tab)
+        }
         // 2026-09-30 用户裁决 A：克隆后欠装检测提示——镜标将按旁白时长等比放大，
         // 「先匹配后克隆」的旧绑定组可能全长不足新目标。提示用户方案生成时会自动
         // 补片（裁决 B）；需要语义最优分配时可重新智能匹配。
