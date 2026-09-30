@@ -36,6 +36,8 @@ export interface MontageStep4Context {
   assemblePlans: Ref<PrecomposePlan[]>
   concatTransition: Ref<string>
   sharedProductInfo: Ref<{ brand: string; product: string; model: string; extra: string }>
+  /** 激活分镜的产品快照（2026-09-30 用户裁决：草稿名产品回退源——全局产品为空时用） */
+  activeProductBrief: () => string
   splitResolution: Ref<string>
   voiceRows: Ref<VoiceRow[]>
   voiceDirInput: Ref<string>
@@ -81,7 +83,7 @@ export interface MontageStep4Context {
 export function useCopywritingMontageStep4Final(ctx: MontageStep4Context) {
   const {
     statusText, ensureServerUrl, toAbsolute, assemblePlans, concatTransition,
-    sharedProductInfo, splitResolution, voiceRows, voiceDirInput, getTabById,
+    sharedProductInfo, activeProductBrief, splitResolution, voiceRows, voiceDirInput, getTabById,
     runDubBatch, nextVoiceChannel, loadTextTemplates, refreshTextFxTracks,
     currentMatchTemplateIds, resolveKeywordHits,
     scanVoiceDir, activeTextPool,
@@ -725,14 +727,20 @@ async function exportAllToJianyingDraft(): Promise<void> {
     try { return JSON.parse(JSON.stringify(o)) as T } catch (_) { return o }
   }
 
-  /** 草稿命名：日期(分钟)+品牌产品型号+分辨率+音频索引+轨道时间轴
-   *  （2026-09-30 用户裁决改序：日期在前精确到分钟；原 09-16 为品牌在前+秒级） */
+  /** 草稿命名：日期(分钟)+品牌产品型号+分辨率+音频索引
+   *  （2026-09-30 用户裁决：日期在前精确到分钟、去「轨道时间轴」后缀；原 09-16 为
+   *  品牌在前+秒级+固定后缀。产品回退链=全局产品 → 激活分镜 productBrief → 「混剪」） */
   function timelineDraftName(): string {
     const brand = String(sharedProductInfo.value.brand || '').trim()
     const product = String(sharedProductInfo.value.product || '').trim()
     const model = String(sharedProductInfo.value.model || '').trim()
-    // 品牌+产品型号（无则兜底「混剪」）
-    const bp = (brand + product + model) || '混剪'
+    let bp = brand + product + model
+    if (!bp) {
+      // 全局产品为空（重启后未重选等）→ 激活分镜的产品快照（随 storyboards 持久化）；
+      // productBrief 形如「品牌 / 产品 / 型号」，文件名剥分隔符与空白
+      bp = activeProductBrief().replace(/[/\s]+/g, '')
+    }
+    if (!bp) bp = '混剪'
     // 日期时间：YYYYMMDD_HHmm（分钟精度，2026-09-30 用户裁决：不需要秒）
     const d = new Date()
     const ymd = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0')
@@ -754,7 +762,7 @@ async function exportAllToJianyingDraft(): Promise<void> {
         ? '音频' + idxs[0] + '-' + idxs[idxs.length - 1]
         : '音频' + idxs.join(',')
     }
-    return ymd + '_' + hm + '_' + bp + '_' + resolution + (audioPart ? '_' + audioPart : '') + '_轨道时间轴'
+    return ymd + '_' + hm + '_' + bp + '_' + resolution + (audioPart ? '_' + audioPart : '')
   }
 
   /** 口播行会话态恢复（2026-09-17 用户报障②③④）：voiceRows 仅在进 Step3/合成确认时

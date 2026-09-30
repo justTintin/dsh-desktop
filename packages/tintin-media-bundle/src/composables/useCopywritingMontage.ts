@@ -396,6 +396,10 @@ export function useCopywritingMontage() {
   const step4 = useCopywritingMontageStep4Final({
     statusText, ensureServerUrl, toAbsolute, assemblePlans, concatTransition,
     sharedProductInfo, splitResolution, voiceRows, voiceDirInput,
+    // 2026-09-30 用户裁决：草稿名产品回退源——全局产品为空（如重启后未重选且缓存损坏）
+    // 时取激活分镜的产品快照（productBrief 随 storyboards 持久化）
+    activeProductBrief: () =>
+      storyboards.value.find((t) => t.id === activeStoryboardId.value)?.productBrief || '',
     // 2026-09-22 用户裁决：候选↔分镜按方案 tabId 精确解析（原 getTabVoiceWavs 过滤
     // 未生成 tab 与 getTabNarratives 不过滤口径不一致，候选按下标错位拿错声音/旁白）
     getTabById: (id: string) =>
