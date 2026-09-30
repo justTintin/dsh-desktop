@@ -1108,6 +1108,12 @@ const fancyCustomPreviewStyle = computed<Record<string, string>>(() => {
   margin: 0 6px; padding: 4px 10px; background: #2a2a2a; border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
+/* 2026-09-30 用户反馈：模板名此前无任何样式（small 裸渲染在深色卡上几乎不可见）——
+   卡底为硬编码深色 #2a2a2a，文字用固定浅色保证任何主题下可读；限宽省略防长名撑卡 */
+.textfx-word-tpl {
+  max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 11px; line-height: 1.4; color: #e6e6e6;
+}
 .textfx-sample-text {
   font-weight: 700; line-height: 1.2; max-width: 160px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
