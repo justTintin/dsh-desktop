@@ -37,6 +37,7 @@ function makeFakeWav(name: string): string {
 function exportAndRead(options: {
   durationsSec: number[]
   sfxClips?: Array<Array<{ path: string; startUs: number; durUs: number }>>
+  tplClips?: Array<Array<{ phrase: string; startUs: number; durUs: number }>>
   transitions?: string[]
 }): Record<string, any> {
   const videos = options.durationsSec.map((_, i) => makeFakeVideo(`v${i}.mp4`))
@@ -50,7 +51,7 @@ function exportAndRead(options: {
     srtPaths: srts,
     srtLimitUs: null,
     transitions: options.transitions ?? ['fade'],
-    textTemplateClips: options.durationsSec.map(() => []),
+    textTemplateClips: options.tplClips ?? options.durationsSec.map(() => []),
     sfxClips: options.sfxClips,
     draftName: 'TRACK_ALIGN_PROBE',
     deps: { probeMedia: () => ({ durationSec: 0.6 }) }
@@ -131,6 +132,51 @@ describe('exportMultiToDraft track alignment (2026-09-29 regression)', () => {
     const sfxPaths = content.materials.audios.map((m: any) => m.path)
     expect(sfxPaths).toContain(wav0)
     expect(sfxPaths).toContain(wav2)
+  })
+
+  // 2026-09-30 用户裁决：文字模板段显示时长默认 1.5s（不再跟随服务端命中窗口全程）
+  it('text-template segments display 1.5s regardless of hit window width', () => {
+    savedLocalAppData = process.env.LOCALAPPDATA || ''
+    home = mkdtempSync(join(tmpdir(), 'jy-tpl-dur-'))
+    process.env.LOCALAPPDATA = home
+    // 最小 .textpreset（effect.resource_id 命中即可；无 resources → 无动画/花字附加）
+    const presetDir = join(home, 'JianyingPro', 'User Data', 'Presets', 'Text_V2')
+    mkdirSync(presetDir, { recursive: true })
+    writeFileSync(join(presetDir, 'tpl-001.textpreset'), JSON.stringify({
+      effect: { resource_id: 'tpl001' },
+      paragraphs: [{ content: JSON.stringify({ text: '', styles: [] }), text_name: 'slot1' }],
+      resources: [],
+    }))
+
+    // 命中窗口 5s（远大于 1.5s）——段时长必须钳到 1.5s，起点仍=命中起点
+    const content = exportAndRead({
+      durationsSec: [3.0],
+      tplClips: [[{ phrase: '降噪', startUs: 0, durUs: US(5), resourceId: 'tpl001' }]],
+    })
+    const tplTextTracks = content.tracks.filter((t: any) => t.type === 'text')
+    const tplSegs = tplTextTracks.flatMap((t: any) => t.segments).filter((s: any) => s.target_timerange.duration === US(1.5))
+    expect(tplSegs.length).toBe(1)
+    expect(tplSegs[0].target_timerange.start).toBe(0)
+    expect(content.materials.text_templates).toHaveLength(1)
+    // 不允许任何文本段仍带着 5s 旧口径
+    const allTextSegs = tplTextTracks.flatMap((t: any) => t.segments)
+    expect(allTextSegs.some((s: any) => s.target_timerange.duration === US(5))).toBe(false)
+  })
+
+  it('keyword fallback segments (preset missing) also display 1.5s', () => {
+    savedLocalAppData = process.env.LOCALAPPDATA || ''
+    home = mkdtempSync(join(tmpdir(), 'jy-tpl-fallback-'))
+    process.env.LOCALAPPDATA = home
+    // 不写预设 → 命中走纯文本关键词兜底（同窗口同口径）
+    const content = exportAndRead({
+      durationsSec: [3.0],
+      tplClips: [[{ phrase: '降噪', startUs: 0, durUs: US(5), resourceId: 'tpl001' }]],
+    })
+    expect(content.materials.text_templates ?? []).toHaveLength(0)
+    const textTracks = content.tracks.filter((t: any) => t.type === 'text')
+    const kwSegs = textTracks.flatMap((t: any) => t.segments).filter((s: any) => s.target_timerange.duration === US(1.5))
+    expect(kwSegs.length).toBe(1)
+    expect(kwSegs[0].target_timerange.start).toBe(0)
   })
 
   it('attaches boundary transition materials to the preceding segment of adjacent video segments', () => {

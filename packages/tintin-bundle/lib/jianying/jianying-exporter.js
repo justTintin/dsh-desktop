@@ -69,6 +69,11 @@ const SUBTITLE_FONT_SIZE_DEFAULT = 10
 // SUBTITLE_TRANSFORM_Y 口径；真机字幕段实测 y≈-0.67 参照）。
 const TEXT_TEMPLATE_TRANSFORM_Y = 0.6
 
+// 2026-09-30 用户裁决：文字模板段显示时长默认 1.5s（原=服务端命中窗口全程，
+// 窗口随字幕行长短浮动观感不一）。段起点仍取命中 startUs；超片段末尾照旧按
+// limitEndUs 裁剪；关键词密度档位下相邻命中间隔 ≥3s，1.5s 展示互不重叠。
+const TEXT_TEMPLATE_DUR_US = 1500000
+
 /** 大写无连字符 uuid（draft_meta_info.draft_id 用，对照 str(uuid.uuid4()).upper()） */
 function newId() {
   return randomUUID().replace(/-/g, '').toUpperCase()
@@ -786,7 +791,9 @@ function appendTextTemplateSegments(track, materials, clips, presetDir, offsetUs
   let fallbackSegs = 0
   for (const c of clips) {
     const startUs = offsetUs + c.startUs
-    let durUs = c.durUs
+    // 2026-09-30 用户裁决：显示时长恒 1.5s（不再跟随命中窗口；fallback 纯文本
+    // 关键词段同窗口同口径，模板/兜底观感一致）
+    let durUs = TEXT_TEMPLATE_DUR_US
     if (limitEndUs !== null && startUs >= limitEndUs) continue
     if (limitEndUs !== null && startUs + durUs > limitEndUs) durUs = limitEndUs - startUs
     if (durUs <= 0) continue

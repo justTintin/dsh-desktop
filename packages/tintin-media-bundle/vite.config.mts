@@ -72,6 +72,10 @@ export default defineConfig({
     // 单一 css 资产（SFC styles + plyr.css），由 inlineCssIntoEntry 嵌入
     // dist/client.js；lib IIFE 模式不会自行加载分片 css。
     cssCodeSplit: false,
+    // 图片等非 css 资产必须内联为 data URI（≤64KB）：运行时只加载 dist/client.js
+    // 单一产物，独立 assets 文件（inlineCssIntoEntry 会清掉 dist/assets）无人加载。
+    // 现有唯一图片=剪映设置引导截图（35KB）。
+    assetsInlineLimit: 64 * 1024,
     lib: {
       entry: 'src/client-entry.ts',
       formats: ['iife'],

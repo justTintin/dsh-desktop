@@ -19,6 +19,9 @@ import { errText, notify, joinPath } from '@/composables/copywritingMontage/cont
 import { clientError } from '@/utils/clientLog'
 import { readCacheDir } from '@/composables/useSettingsConfig'
 import type { StoryboardShot } from '@/composables/opsStoryboardLogic'
+// 剪映设置引导图（2026-09-29：导出草稿需开启「导入 PR或FCP 工程」；vite
+// assetsInlineLimit=64KB 内联为 data URI，运行时无需独立资产文件）
+import jyImportSettingImg from '@/assets/jianying-import-setting.png'
 
 const shell = inject(copywritingMontageShellKey)!
 const { step, go, steps } = shell
@@ -118,6 +121,9 @@ const {
 //  取最优，GET /sfx/{id}/file 下载落盘绑定）──
 const sfxMatchBusy = ref(false)
 const sfxMatchStage = ref('')
+/** 剪映设置引导图放大查看（2026-09-29：点击小图开全屏遮罩，点遮罩关闭） */
+const jyImgZoom = ref(false)
+function openJyImportImg(): void { jyImgZoom.value = true }
 const sfxMatchDone = ref(false)
 
 /** 音效库条目（GET /sfx/library 返回；analysis=服务端 /sfx/analyze 语义结果） */
@@ -751,6 +757,14 @@ const fancyCustomPreviewStyle = computed<Record<string, string>>(() => {
               title="该功能暂时停用"
               @click="exportJianyingPackageDraft" />
           </div>
+          <!-- 2026-09-29 用户裁决：导出草稿前需在剪映开启「导入 PR或FCP 工程」——
+               引导图 + 文字提示常驻导出按钮下方（图=剪映 全局设置→通用 截图，
+               src/assets 内联 data URI；点击新窗口放大） -->
+          <div class="jy-import-hint">
+            <img :src="jyImportSettingImg" class="jy-import-img" alt="剪映全局设置：通用 → 打开「导入 PR或FCP 工程」"
+              title="点击放大查看" @click="openJyImportImg" />
+            <span class="jy-import-text">导入的草稿需在剪映里开启「导入工程」才会加载：<b>剪映 → 全局设置 → 通用 → 打开「导入 PR或FCP…」开关</b>（可在启动时导入其他剪辑软件工程），然后重启剪映即可在首页看到导出的草稿。左图为该开关位置。</span>
+          </div>
           <!-- 2026-09-18 用户裁决：导出剪映时间轴进度条+完成提示独立于服务端合成，
                紧跟方案一按钮（不放到服务端合成下面）；2026-09-20 用户反馈：进度条与按钮拉开间距 -->
           <div v-if="exportBusy" class="pbar" style="margin-top:8px"><div class="pbar-inner" :style="{ width: exportProgress + '%' }"></div></div>
@@ -803,6 +817,11 @@ const fancyCustomPreviewStyle = computed<Record<string, string>>(() => {
 
     <!-- 分镜声音批量克隆选择弹窗（BGM 选择组件复用为音频选择） -->
     <CopywritingBgmPickDialog ref="bgmDlgRef" />
+
+    <!-- 剪映设置引导图放大遮罩（点小图开、点遮罩关） -->
+    <div v-if="jyImgZoom" class="jy-img-zoom" @click="jyImgZoom = false">
+      <img :src="jyImportSettingImg" alt="剪映全局设置：通用 → 打开「导入 PR或FCP 工程」" />
+    </div>
 </template>
 
 <style scoped>
@@ -1142,6 +1161,30 @@ const fancyCustomPreviewStyle = computed<Record<string, string>>(() => {
 .vd-split:hover { background: var(--primary); opacity: 0.35; }
 /* 还原 LUT：库内选择列表（2026-09-14） */
 .lut-list { display: flex; flex-direction: column; gap: 4px; max-height: 132px; overflow-y: auto; }
+/* 剪映「导入工程」引导块（2026-09-29 用户裁决：图+文字常驻导出按钮下方；
+   小图点击放大=全屏遮罩，点遮罩关闭） */
+.jy-import-hint {
+  display: flex; gap: var(--space-3); align-items: flex-start;
+  padding: var(--space-2) var(--space-3); margin-top: var(--space-2);
+  background: var(--surface-container); border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.jy-import-img {
+  width: 168px; flex: none; cursor: zoom-in;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.jy-import-text { font-size: 12px; line-height: 1.7; color: var(--muted-foreground); }
+.jy-import-text b { color: var(--foreground); }
+.jy-img-zoom {
+  position: fixed; inset: 0; z-index: 1002;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex; align-items: center; justify-content: center;
+  cursor: zoom-out;
+}
+.jy-img-zoom img {
+  max-width: min(90vw, 560px); max-height: 88vh;
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-3);
+}
 /* 导出完成提示条（2026-09-22 用户裁决：样式对齐智能混剪 MontageStep4Panel 同名类） */
 .export-done-bar {
   display: flex; align-items: center; gap: var(--space-2);
