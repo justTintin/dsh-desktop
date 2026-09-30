@@ -156,10 +156,9 @@ onUnmounted(() => document.removeEventListener('click', closeMenu))
 .kwar-track-head { display: flex; align-items: baseline; gap: 10px; }
 .kwar-track-name { font-size: 13px; font-weight: 700; color: var(--primary); }
 .kwar-track-meta { font-size: 12px; color: var(--muted-foreground); }
-/* 2026-09-30 用户反馈：操作提示要显眼——灰字小号改主色描边胶囊 */
+/* 2026-09-30 用户反馈：提示要显眼但不要胶囊形态——主色加粗纯文字（无边框/底色/圆角） */
 .kwar-track-hint {
   margin-left: auto; font-size: 12px; font-weight: 600; color: var(--primary);
-  padding: 2px 10px; border: 1px solid var(--primary); border-radius: 999px;
   white-space: nowrap;
 }
 /* 字幕段横向平铺（2026-09-23 用户裁决：不再逐行纵向堆叠） */
